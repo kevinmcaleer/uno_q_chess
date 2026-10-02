@@ -65,7 +65,9 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
+| `autocal.py` | Finds the board corners from the chequerboard pattern |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
+| `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
 
 ## Running it on the UNO Q
 
@@ -78,11 +80,20 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
    the app downloads Stockfish (about 30 MB) into `data/`. The page says
    "Downloading Stockfish" until it's ready.
 4. Open `http://<UNO-Q-IP>:7000` on your phone or computer.
-5. **Calibrate:** in the Camera panel, choose *Calibrate* and click the outer
-   corners of a8, h8, h1 and a1 in that order, then *Save calibration*. The
-   *Straightened board* view should show the grid lined up with the squares,
-   a8 top left. Calibration is saved in `data/calibration.json` and kept
-   between runs; redo it if the camera moves.
+5. **Calibrate:** in the Camera panel, choose *Calibrate*.
+   - **Find board automatically** looks for the chequerboard itself. It works
+     best on an empty board (the pieces hide some square corners); with the
+     pieces set up it usually works too, unless the board is small in the picture.
+   - Or click the outer corners of a8, h8, h1 and a1 roughly (within about a
+     third of a square) and press **Snap to squares** to line them up exactly.
+   - Zoom in with the slider, drag a corner to move it (a magnifier shows
+     while you drag), or tap one and nudge it with the arrow keys.
+   - The cyan grid should sit on the squares with a1 (shaded) in the right
+     corner; **Rotate labels** turns them a quarter turn if not.
+
+   Then *Save calibration*. Calibration is saved in `data/calibration.json`
+   and kept between runs; opening *Calibrate* again shows the saved corners
+   so you can fine-tune them. Redo it if the camera moves.
 6. Set up the pieces, pick your colour and the computer's skill, and press
    **Start new game**.
 
@@ -107,6 +118,7 @@ pip install chess numpy opencv-python-headless
 cd python
 python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
+python3 test_autocal.py           # automatic calibration
 ```
 
 ## Tuning

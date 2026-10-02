@@ -12,13 +12,14 @@ INNER = 0.6                     # only compare the middle 60% of each square
 
 
 def load_calibration(path):
-    """Return the saved homography, or None if the board isn't calibrated yet."""
+    """Return (homography, corners), or (None, None) if the board isn't
+    calibrated yet."""
     try:
         with open(path) as f:
             data = json.load(f)
     except FileNotFoundError:
-        return None
-    return np.array(data["homography"], dtype=np.float32)
+        return None, None
+    return np.array(data["homography"], dtype=np.float32), data["corners"]
 
 
 def save_calibration(path, corners):

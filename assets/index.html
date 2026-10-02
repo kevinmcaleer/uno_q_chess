@@ -61,11 +61,29 @@
         <div id="view-board" class="view"><img id="board-img" alt="straightened board" /></div>
         <div id="view-live" class="view hidden"><img id="live-img" alt="live camera" /></div>
         <div id="view-calibrate" class="view hidden">
-          <p id="calib-hint">Click the outer corner of <b>a8</b>.</p>
-          <div class="calib-wrap">
-            <img id="snap" alt="camera snapshot" />
-            <svg id="calib-marks"></svg>
+          <div class="row calib-tools">
+            <button id="calib-auto" class="primary" title="Find the board from its squares">Find board automatically</button>
+            <button id="calib-snap" title="Line your corners up exactly with the squares">Snap to squares</button>
+            <button id="calib-rotate" title="Turn the a8/h8/h1/a1 labels a quarter turn">Rotate labels</button>
           </div>
+          <p id="calib-hint">Click the outer corner of <b>a8</b>.</p>
+          <div class="row calib-zoom">
+            <button id="zoom-out" aria-label="Zoom out">−</button>
+            <input id="zoom" type="range" min="1" max="6" step="0.5" value="1" aria-label="Zoom" />
+            <button id="zoom-in" aria-label="Zoom in">+</button>
+            <output id="zoom-out-label">1×</output>
+          </div>
+          <div class="calib-wrap">
+            <div id="calib-viewport">
+              <svg id="calib-svg" xmlns="http://www.w3.org/2000/svg">
+                <image id="calib-img" x="0" y="0" />
+                <g id="calib-grid"></g>
+                <g id="calib-handles"></g>
+              </svg>
+            </div>
+            <canvas id="loupe" width="180" height="180" class="hidden"></canvas>
+          </div>
+          <p class="small">Drag a corner to move it; tap one and use the arrow keys to nudge it (Shift for bigger steps). A magnifier shows while you drag.</p>
           <div class="row">
             <button id="calib-reset">Start again</button>
             <button id="calib-refresh">New snapshot</button>
