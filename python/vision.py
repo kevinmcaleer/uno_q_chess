@@ -156,9 +156,16 @@ class BoardCamera:
     The wait methods call `check()` on every frame so the game can interrupt
     them (new game, typed move)."""
 
-    def __init__(self, camera, H=None):
+    def __init__(self, camera, H=None, corners=None):
         self.camera = camera
         self.H = H
+        self.corners = corners
+        # Re-aligning after the board is nudged (set up by main.py):
+        # alignment(frame, corners) -> 0..1 and find_board(frame, corners) -> corners or None
+        self.alignment = None
+        self.find_board = None
+        self.on_realign = lambda corners: None
+        self.baseline = None            # alignment just after (re)calibrating
         self._latest = None
         self._seq = 0
         self._cond = threading.Condition()
@@ -215,11 +222,46 @@ class BoardCamera:
             if calm >= still_frames:
                 return cur
 
+    def set_calibration(self, corners):
+        self.corners = corners
+        self.H = homography_from_corners(corners)
+        self.baseline = None
+
+    def realign(self):
+        """If the board has been nudged, find it again from its squares and
+        move the grid onto it, keeping which corner is a1. Returns True if
+        the grid moved. Only the cheap alignment check runs normally; the
+        slower board finder only when that check says the grid is off."""
+        if self.alignment is None or self.find_board is None or self.corners is None:
+            return False
+        frame = self.frame()
+        now = self.alignment(frame, self.corners)
+        if self.baseline is None:
+            self.baseline = now
+        if self.baseline < 0.5 or now >= 0.85 * self.baseline:
+            return False                # still lined up (or the check can't tell)
+        found = self.find_board(frame, self.corners)
+        if not found:
+            return False
+        c, f = np.float32(self.corners), np.float32(found)
+        side = float(np.linalg.norm(c[0] - c[1])) / 8
+        fixed = self.alignment(frame, found)
+        if np.abs(f - c).max() > 2 * side or fixed <= now:
+            return False                # not a small nudge, or no better: leave it
+        self.corners = [(round(float(x), 2), round(float(y), 2)) for x, y in found]
+        self.H = homography_from_corners(self.corners)
+        self.baseline = fixed
+        self.on_realign(self.corners)
+        return True
+
     def wait_for_board_change(self, reference, change_threshold, check=lambda: None, **kw):
         """Wait until the board has settled into a state that differs from
-        `reference` on at least one square (beyond any whole-board lighting change)."""
+        `reference` on at least one square (beyond any whole-board lighting change).
+        If the board itself was nudged, the grid is moved back onto it first."""
         while True:
             settled = self.wait_until_still(check, **kw)
+            if self.realign():
+                settled = self.board()
             scores = change_scores(reference, settled)
             if max(scores) - float(np.median(scores)) > change_threshold:
                 return settled

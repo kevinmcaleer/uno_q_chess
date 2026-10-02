@@ -43,6 +43,11 @@ and giving you hints if you ask for them.
 Because of step 4, the app never needs to recognise *what* a piece is, so
 ordinary pieces work. Special printed pieces just make it more reliable.
 
+If the board itself gets nudged during a game, the app notices the next
+time the board is still (the grid no longer lines up with the squares),
+finds the board again from its squares and moves the grid onto it, keeping
+which corner is a1. It says so, and saves the new calibration.
+
 The *Straightened board* tab shows the board live from the camera, with a
 small badge in each square for the piece the app thinks is there. Once a
 second, while nothing is moving, it also checks which squares look occupied:
@@ -84,6 +89,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
 | `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
 | `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
+| `test_realign.py` | Offline test of the grid following the board when it's nudged mid-game |
 
 ## Running it on the UNO Q
 
@@ -138,6 +144,7 @@ python3 test_autocal.py           # automatic calibration
 python3 test_still.py             # stillness check with a noisy, flickering camera
 python3 test_occupancy.py         # spotting missing and unexpected pieces
 python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
+python3 test_realign.py           # the grid following the board when it's nudged
 ```
 
 ## Tuning

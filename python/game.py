@@ -155,6 +155,8 @@ class Game:
         self.say("Set up the starting position and take your hands away.")
         self._set_status("Waiting for the board to settle.")
         reference = self.cam.wait_until_still(self._check_new_game_only)
+        if self.cam.realign():
+            reference = self.cam.board()
         self._show_board(reference)
         self.say("Board ready.")
 

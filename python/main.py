@@ -17,7 +17,7 @@ from arduino.app_bricks.web_ui import WebUI
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App, Bridge, Frame, Logger
 
-from autocal import find_board
+from autocal import alignment, find_board
 from engine import Engine, find_local
 from game import Game
 import stockfish_install
@@ -34,8 +34,8 @@ ui = WebUI()
 camera = Camera(resolution=(1280, 720), fps=10)     # first USB camera found
 camera.start()
 H, corners = load_calibration(CALIBRATION)
-cam = BoardCamera(camera, H)
-cam.corners = corners                               # for adjusting them on the page
+cam = BoardCamera(camera, H, corners)               # corners: for adjusting them on the page
+cam.alignment, cam.find_board = alignment, find_board   # re-align if the board gets nudged
 
 log = []                                            # recent spoken messages, for new page loads
 
@@ -85,6 +85,15 @@ def make_engine(skill, think, on_wait=None):
 game = Game(cam, make_engine, say, send_state, show_move)
 
 
+def on_realign(corners):
+    save_calibration(CALIBRATION, corners)
+    say("The board moved, so I've lined the grid up with it again.")
+    send_state()
+
+
+cam.on_realign = on_realign
+
+
 # ---- web page -> app ------------------------------------------------------
 
 def on_connect(client):
@@ -109,8 +118,8 @@ def on_hint(client, data):
 
 def on_calibrate(client, data):
     corners = [(round(float(x), 2), round(float(y), 2)) for x, y in data["corners"]]
-    cam.H = save_calibration(CALIBRATION, corners)
-    cam.corners = corners
+    save_calibration(CALIBRATION, corners)
+    cam.set_calibration(corners)
     game.calibrate_preview()
     say("Calibration saved. Check the grid lines up with the squares.")
     send_state()

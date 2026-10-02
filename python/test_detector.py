@@ -15,7 +15,7 @@ CORNERS = [(380, 90), (930, 110), (1010, 650), (300, 630)]   # a8 h8 h1 a1 in th
 rng = np.random.default_rng(1)
 
 
-def render(board, nudged=None):
+def render(board, nudged=None, corners=CORNERS):
     """nudged: {square: (dx, dy)} pixels a piece sits off-centre."""
     nudged = nudged or {}
     top = np.zeros((WARP_SIZE, WARP_SIZE, 3), np.uint8)
@@ -32,7 +32,7 @@ def render(board, nudged=None):
             cv2.putText(top, p.symbol().upper(), (c[0] - 12, c[1] + 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 200), 3)
     # project onto a skewed "camera" frame and add sensor noise
-    H = homography_from_corners(CORNERS)
+    H = homography_from_corners(corners)
     cam = cv2.warpPerspective(top, np.linalg.inv(H), (1280, 720))
     noise = rng.normal(0, 4, cam.shape)
     return np.clip(cam + noise, 0, 255).astype(np.uint8)

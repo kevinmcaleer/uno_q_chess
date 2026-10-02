@@ -138,6 +138,16 @@ def _consistent(gray, corners):
     return np.mean(r > 0) > 0.8 and r.mean() > 0.4 * np.abs(r).mean()
 
 
+def alignment(frame, corners):
+    """Fraction of the 49 inner grid corners where the squares around them are
+    light and dark the right way round, sampling just 6% of a square from the
+    corner. Near 1 when the grid sits on the board; it drops as soon as the
+    board slides by more than that, long before moves get misread. Cheap
+    enough to run on every settled frame."""
+    r = _responses(_gray(frame).astype(np.float32), corners, 0.06)
+    return float(np.mean(r > 0))
+
+
 def _optimize(gray, c):
     """Nudge the four corners to line the grid up with the squares, by
     climbing the chequerboard score. Works with pieces on the board (it only
