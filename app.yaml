@@ -1,0 +1,7 @@
+name: Chess Camera
+icon: ♟️
+description: Play Stockfish on a real chess board. A USB webcam watches the board, reads every move, and a web page shows the game, the computer's replies and hints.
+
+bricks:
+  - arduino:web_ui
+  - stockfish

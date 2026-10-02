@@ -1,7 +1,4 @@
-"""How the human finds out what the computer played."""
-import shutil
-import subprocess
-
+"""Describe moves in words and draw them on the board image."""
 import chess
 import cv2
 
@@ -29,25 +26,14 @@ def describe(board, move):
     return text
 
 
-def say(text):
-    print(f">>> {text}", flush=True)
-    for tts in ("espeak-ng", "espeak"):
-        if shutil.which(tts):
-            subprocess.Popen([tts, text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            break
-
-
 def centre(square):
     f, r = chess.square_file(square), chess.square_rank(square)
     return int((f + 0.5) * SQ), int((7 - r + 0.5) * SQ)
 
 
-def draw_move(board_img, move, path="last_move.png", show=False):
-    """Draw an arrow for the move on the straightened board image."""
+def draw_move(board_img, move):
+    """The straightened board image with an arrow for the move."""
     img = board_img.copy()
     cv2.arrowedLine(img, centre(move.from_square), centre(move.to_square),
                     (0, 0, 255), 12, tipLength=0.25)
-    cv2.imwrite(path, img)
-    if show:
-        cv2.imshow("chess", img)
-        cv2.waitKey(1)
+    return img

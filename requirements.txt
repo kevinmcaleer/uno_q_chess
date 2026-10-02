@@ -1,3 +1,0 @@
-chess>=1.10
-opencv-python-headless>=4.8   # use opencv-python instead if you want the calibrate/--show windows
-numpy

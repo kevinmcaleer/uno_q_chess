@@ -1,0 +1,3 @@
+id: stockfish
+name: Stockfish
+description: The Stockfish chess engine in its own container, speaking UCI on TCP port 4000 (one fresh engine per connection)
