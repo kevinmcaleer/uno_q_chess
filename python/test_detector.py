@@ -15,7 +15,9 @@ CORNERS = [(380, 90), (930, 110), (1010, 650), (300, 630)]   # a8 h8 h1 a1 in th
 rng = np.random.default_rng(1)
 
 
-def render(board):
+def render(board, nudged=None):
+    """nudged: {square: (dx, dy)} pixels a piece sits off-centre."""
+    nudged = nudged or {}
     top = np.zeros((WARP_SIZE, WARP_SIZE, 3), np.uint8)
     for sq in chess.SQUARES:
         f, r = chess.square_file(sq), chess.square_rank(sq)
@@ -23,7 +25,8 @@ def render(board):
         top[y:y + SQ, x:x + SQ] = (181, 217, 240) if (f + r) % 2 else (99, 136, 181)
         p = board.piece_at(sq)
         if p:
-            c = (x + SQ // 2, y + SQ // 2)
+            dx, dy = nudged.get(sq, (0, 0))
+            c = (x + SQ // 2 + dx, y + SQ // 2 + dy)
             body = (235, 235, 235) if p.color else (40, 40, 40)
             cv2.circle(top, c, 34, body, -1)
             cv2.putText(top, p.symbol().upper(), (c[0] - 12, c[1] + 12),

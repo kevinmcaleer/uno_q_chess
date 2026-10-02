@@ -31,7 +31,10 @@ and giving you hints if you ask for them.
    (the game starts from the normal starting position), so it asks
    python-chess for every legal move and picks the one whose squares
    changed while the rest of the board stayed quiet. Castling (4 squares),
-   en passant and promotion (assumed queen) are handled.
+   en passant and promotion (assumed queen) are handled. It also checks
+   which squares look occupied: the move's starting square must now look
+   empty, and a piece you knock while moving (but that's still on its
+   square) doesn't count against the reading. The app tells you to centre it.
 5. **Computer's turn.** Stockfish picks a move. The web page shows it
    (and reads it aloud if you like), the LED matrix lights its from and to
    squares, and you make the move for it; the app checks you moved the
@@ -80,6 +83,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
 | `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
 | `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
+| `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
 
 ## Running it on the UNO Q
 
@@ -133,6 +137,7 @@ python3 test_game.py              # whole game loop against real Stockfish
 python3 test_autocal.py           # automatic calibration
 python3 test_still.py             # stillness check with a noisy, flickering camera
 python3 test_occupancy.py         # spotting missing and unexpected pieces
+python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
 ```
 
 ## Tuning

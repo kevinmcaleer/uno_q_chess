@@ -23,6 +23,7 @@ class FakeCamera:
 
     def __init__(self):
         self.board = chess.Board()
+        self.nudged = {}
         self.image = render(self.board)
         self.lock = threading.Lock()
 
@@ -31,10 +32,14 @@ class FakeCamera:
         with self.lock:
             return self.image
 
-    def play(self, move):
+    def play(self, move, knock=None):
+        """knock: a square whose piece gets knocked off-centre at the same time."""
         with self.lock:
             self.board.push(move)
-            self.image = render(self.board)
+            self.nudged.pop(move.to_square, None)
+            if knock is not None:
+                self.nudged[knock] = (26, -14)
+            self.image = render(self.board, self.nudged)
 
 
 def wait_for(cond, timeout=30):
@@ -55,6 +60,7 @@ def main(plies=12):
     threading.Thread(target=game.run, daemon=True).start()
     game.request_new_game(colour="white", skill=3, think=0.1)
     typed = False
+    knocked = None
 
     wait_for(lambda: game.status == "Your move.")
     while len(game.board.move_stack) < plies:
@@ -67,13 +73,22 @@ def main(plies=12):
             if not typed and n >= 4:
                 game.request_typed_move(move.uci())      # typed, then made on the board
                 typed = True
-            physical.play(move)
+            # once, knock a neighbouring piece while moving
+            near = [sq for sq in game.board.piece_map() if sq not in (move.from_square, move.to_square)
+                    and chess.square_distance(sq, move.from_square) == 1]
+            knock = near[0] if n == 2 and near else None
+            physical.play(move, knock)
+            if knock is not None:
+                knocked = chess.square_name(knock)
         else:
             wait_for(lambda: game.expected is not None)
             physical.play(game.expected)
         wait_for(lambda: len(game.board.move_stack) > n)
         assert game.board.move_stack == physical.board.move_stack, (game.board, physical.board)
         print(f"{n + 1:2d}. {game.board.peek().uci()}", flush=True)
+
+    assert knocked and any("looks knocked" in t and knocked in t for t in said), said
+    print(f"Knocked the piece on {knocked}: read the move anyway and asked to centre it")
 
     # a new game request interrupts the current one
     game.request_new_game(colour="black", skill=1, think=0.1)

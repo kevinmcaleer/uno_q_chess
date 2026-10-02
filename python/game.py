@@ -8,8 +8,8 @@ import threading
 import chess
 
 from announce import describe, draw_move
-from detector import infer_move
-from vision import change_scores, draw_grid, warp
+from detector import infer_move, squares_touched
+from vision import change_scores, draw_grid, occupancy_mismatches, warp
 
 
 class NewGame(Exception):
@@ -203,11 +203,26 @@ class Game:
                 settled = self.cam.wait_for_board_change(reference, s["change_threshold"], self._check)
             except TypedMove as t:
                 return t.move, self.cam.wait_until_still(self._check_new_game_only)
-            move, fit = infer_move(self.board, change_scores(reference, settled), s["min_fit"])
+            scores = change_scores(reference, settled)
+            pieces = {sq: p.color for sq, p in self.board.piece_map().items()}
+            extra, missing = occupancy_mismatches(settled, pieces)
+            move, fit = infer_move(self.board, scores, s["min_fit"], (extra, missing))
             if move:
+                # a piece that changed a lot but is still on its square was knocked
+                touched = squares_touched(self.board, move)
+                knocked = [sq for sq in pieces if sq not in touched and sq not in missing
+                           and scores[sq] > s["change_threshold"]]
+                if knocked:
+                    names = ", ".join(chess.square_name(sq) for sq in knocked)
+                    self.say(f"The piece on {names} looks knocked. That's fine, "
+                             "but centre it on its square when you can.")
                 return move, settled
             misses += 1
-            self.say("I couldn't read that move. Please check the pieces are centred on their squares.")
+            odd = sorted(set(extra) | set(missing))
+            where = (" Have a look at " + ", ".join(chess.square_name(sq) for sq in odd) + "."
+                     if odd else "")
+            self.say("I couldn't read that move. Please check the pieces are centred on their "
+                     "squares." + where)
             if misses >= 3:
                 self.say("You can also type the move on the web page, for example e2e4.")
                 misses = 0
