@@ -58,7 +58,7 @@ def main(plies=12):
     game = Game(cam, lambda skill, think, on_wait=None: Engine(skill, think, on_wait=on_wait),
                 say=lambda t: said.append(t), on_update=lambda s: None)
     threading.Thread(target=game.run, daemon=True).start()
-    game.request_new_game(colour="white", skill=3, think=0.1)
+    game.request_new_game(colour="white", skill=3, think=0.1, coach=True)
     typed = False
     knocked = None
 
@@ -89,6 +89,11 @@ def main(plies=12):
 
     assert knocked and any("looks knocked" in t and knocked in t for t in said), said
     print(f"Knocked the piece on {knocked}: read the move anyway and asked to centre it")
+
+    openers = ("great move", "good move", "not quite", "that's a mistake", "oh no", "nice")
+    coached = [t for t in said if t.lower().startswith(openers)]
+    assert coached, said
+    print("Coach said:", *coached, sep="\n  ")
 
     # a new game request interrupts the current one
     game.request_new_game(colour="black", skill=1, think=0.1)

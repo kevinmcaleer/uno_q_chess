@@ -129,6 +129,13 @@ in red on the board and drawn as an arrow on the camera view. *Hint* asks
 Stockfish for a move for you. If a move can't be read, you can type it
 (`e2e4` or `Nf3`) and then make it on the board.
 
+With *Coach me* ticked (the default), the app checks each of your moves with
+Stockfish and tells you when it was a mistake and why ("That lets me
+checkmate with queen takes on f7. Better was pawn to g6"), or what was good
+about it ("Great move: forking the king and rook"). Ordinary moves get no
+comment. The computer also says why it played its move when there's a clear
+reason.
+
 The LED matrix shows the computer's last move from White's side: the left
 8x8 columns are the board (a-h left to right, rank 8 at the top), the
 from-square dim and the to-square bright.

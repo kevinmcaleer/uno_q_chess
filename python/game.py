@@ -9,6 +9,7 @@ import chess
 
 from announce import describe, draw_move
 from detector import infer_move, knocked_pieces, squares_touched
+from explain import coach, reasons_for
 from vision import change_scores, draw_grid, occupancy_mismatches, warp
 
 
@@ -43,8 +44,9 @@ class Game:
     # ---- requests from the web page -------------------------------------
 
     def request_new_game(self, colour="white", skill=5, hints=False, think=0.5,
-                         change_threshold=25.0, min_fit=10.0):
+                         change_threshold=25.0, min_fit=10.0, coach=False):
         settings = dict(colour=colour, skill=int(skill), hints=bool(hints), think=float(think),
+                        coach=bool(coach),
                         change_threshold=float(change_threshold), min_fit=float(min_fit))
         try:
             self._new_game.get_nowait()
@@ -170,11 +172,16 @@ class Game:
                 self.say("Your move.")
                 move, reference = self._read_move(reference)
                 self.say("You played " + describe(self.board, move))
+                if s.get("coach"):
+                    self._coach(move)
                 self.board.push(move)
             else:
                 self._set_status("Thinking...")
                 self.expected = self.engine.play(self.board)
                 text = describe(self.board, self.expected)
+                why = reasons_for(self.board, self.expected) if s.get("coach") else []
+                if why and why[0].weight >= 8:
+                    text += ", " + why[0].text.replace("getting the king", "getting my king")
                 self._show_board(reference, self.expected)
                 self.show_move(self.expected)
                 self._set_status(f"Please play my move: {text}.")
@@ -196,6 +203,18 @@ class Game:
         self.say(f"Game over: {self.board.result()}")
         self._set_status(f"Game over: {self.board.result()}. Start a new game when you're ready.")
         self.settings = None
+
+    def _coach(self, move):
+        """Say why the human's move was good or bad (board before the move).
+        Quiet for ordinary moves; a problem here never stops the game."""
+        self._set_status("Checking your move...")
+        try:
+            e = coach(self.engine, self.board, move, them="me")
+        except Exception as err:
+            self.say(f"I couldn't check that move: {err}")
+            return
+        if e.worth_saying:
+            self.say(e.text)
 
     def _read_move(self, reference):
         """Wait for the board to change and settle, then work out the move.

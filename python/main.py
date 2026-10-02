@@ -134,7 +134,7 @@ def on_connect(client):
 
 def on_new_game(client, data):
     game.request_new_game(**{k: v for k, v in (data or {}).items()
-                             if k in ("colour", "skill", "hints", "change_threshold", "min_fit")})
+                             if k in ("colour", "skill", "hints", "coach", "change_threshold", "min_fit")})
 
 
 def on_typed_move(client, data):

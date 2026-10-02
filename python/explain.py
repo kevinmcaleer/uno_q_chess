@@ -40,6 +40,13 @@ class Explanation:
     bad: list = field(default_factory=list)     # Reasons
     text: str = ""
 
+    @property
+    def worth_saying(self):
+        """Mistakes always; good moves only when there's a clear reason."""
+        if self.quality in ("inaccuracy", "mistake", "blunder"):
+            return bool(self.text)
+        return any(r.weight >= 8 for r in self.good)
+
 
 # ---- small helpers -------------------------------------------------------
 
