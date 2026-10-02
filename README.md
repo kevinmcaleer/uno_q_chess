@@ -84,6 +84,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `speech.py` | Speaks messages on the board's speaker (espeak-ng, sent to the board's sound server) |
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
+| `lessons.py` | The Lessons tab: lessons on the pieces, strategy, tactics and openings, and checking each lesson move |
 | `explain.py` | Tutor: says why a move is good or bad (hanging pieces, mates, forks, pins, missed captures) and grades it with Stockfish |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
 | `autocal.py` | Finds the board corners from the chequerboard pattern |
@@ -93,6 +94,8 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
 | `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
 | `test_realign.py` | Offline test of the grid following the board when it's nudged mid-game |
+| `test_lessons.py` | Offline test that every lesson step can be completed and wrong moves get sensible answers |
+| `test_lesson_board.py` | Offline test of lessons on the real board with a fake camera |
 | `test_explain.py` | Offline test of the move explanations on classic positions |
 
 ## Running it on the UNO Q
@@ -135,6 +138,17 @@ checkmate with queen takes on f7. Better was pawn to g6"), or what was good
 about it ("Great move: forking the king and rook"). Ordinary moves get no
 comment. The computer also says why it played its move when there's a clear
 reason.
+
+The **Lessons** tab at the top of the page teaches chess step by step: how
+each piece moves, check, checkmate and castling; strategy (piece values, the
+centre, castling early, hanging pieces); tactics (forks, pins, mating
+patterns); and openings such as the Queen's Gambit, the Italian Game, the
+Ruy Lopez and the Sicilian, where you play both sides' moves. Make each move
+by clicking on the lesson board, or tick *Use my real board*: the app says
+which pieces to put where, checks the position with the camera (press
+*It's set up* if it doesn't notice), then reads your move from the board.
+Wrong moves get an explanation, and *Show me* shows a right one. Finished
+lessons get a tick (remembered by your browser).
 
 The LED matrix shows the computer's last move from White's side: the left
 8x8 columns are the board (a-h left to right, rank 8 at the top), the
@@ -211,6 +225,8 @@ python3 test_occupancy.py         # spotting missing and unexpected pieces
 python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
 python3 test_realign.py           # the grid following the board when it's nudged
 python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
+python3 test_lessons.py           # every lesson can be completed
+python3 test_lesson_board.py      # lessons on the board with a fake camera
 python3 test_speech.py            # speaking on the board's speaker (pip install espeakng-loader)
 ```
 

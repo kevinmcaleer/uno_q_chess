@@ -17,9 +17,11 @@ from arduino.app_bricks.web_ui import WebUI
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App, Bridge, Frame, Logger
 
+from announce import describe
 from autocal import alignment, find_board
 from engine import Engine, find_local
 from game import Game
+import lessons
 from speech import Speaker
 import stockfish_install
 from vision import (WARP_SIZE, BoardCamera, load_calibration, motion, occupancy_mismatches,
@@ -122,10 +124,104 @@ def on_realign(corners):
 cam.on_realign = on_realign
 
 
+# ---- lessons ------------------------------------------------------------------
+
+tutor = lessons.Runner()
+
+
+def send_lesson():
+    try:
+        ui.send_message("lesson", tutor.state())
+    except Exception:
+        pass
+
+
+def lesson_moved(move):
+    """A lesson move read from the real board (called by the game loop)."""
+    ok, message = tutor.try_move(move)
+    after_move(ok, message)
+    return ok
+
+
+def after_move(ok, message):
+    if ok and not tutor.finished:
+        say(message + " " + tutor.step["text"])
+    elif ok:
+        say(message + " That's the end of this lesson. Well done!")
+    else:
+        say(message)
+    send_lesson()
+    if ok:
+        sync_board()
+
+
+def sync_board():
+    """In real-board mode, have the camera watch for the current step's move."""
+    if not tutor.on_board:
+        return
+    if tutor.wants_move:
+        game.request_lesson(tutor.board, lesson_moved)
+    else:
+        game.request_idle("Lesson: read the page, then press Next." if not tutor.finished
+                          else "Lesson finished. Pick another, or start a game.")
+
+
+def on_lesson_open(client, data):
+    if str((data or {}).get("id")) not in lessons.BY_ID:
+        return
+    tutor.open(str(data.get("id")))
+    send_lesson()
+    say(f"{tutor.lesson['title']}. {tutor.step['text']}")
+    sync_board()
+
+
+def on_lesson_nav(client, data):
+    action = (data or {}).get("action")
+    if action == "next":
+        tutor.next()
+    elif action == "back":
+        tutor.go(tutor.i - 1)
+    elif action == "restart":
+        tutor.go(0)
+    send_lesson()
+    if tutor.lesson and not tutor.finished:
+        say(tutor.step["text"])
+    sync_board()
+
+
+def on_lesson_move(client, data):
+    if tutor.lesson:
+        after_move(*tutor.try_move(str((data or {}).get("move", ""))))
+
+
+def on_lesson_answer(client, data):
+    move = tutor.answer()
+    if move:
+        say("Try " + describe(tutor.board, move) + ".")
+        ui.send_message("lesson_answer", {"move": move.uci()})
+
+
+def on_lesson_board(client, data):
+    tutor.on_board = bool((data or {}).get("on"))
+    send_lesson()
+    if tutor.on_board:
+        if game.cam.H is None:
+            say("Calibrate the board first to use it for lessons.")
+        sync_board()
+    else:
+        game.request_idle("Lessons on screen. Start a new game to play on the board.")
+
+
+def on_lesson_set_up(client, data):
+    game.request_set_up()
+
+
 # ---- web page -> app ------------------------------------------------------
 
 def on_connect(client):
     send_state()
+    ui.send_message("lessons", {"lessons": lessons.catalogue()})
+    send_lesson()
     ui.send_message("occupancy", occupancy)
     for text in log[-10:]:
         ui.send_message("say", {"text": text, "replay": True})
@@ -133,6 +229,8 @@ def on_connect(client):
 
 
 def on_new_game(client, data):
+    tutor.on_board = False                          # the board is for the game now
+    send_lesson()
     game.request_new_game(**{k: v for k, v in (data or {}).items()
                              if k in ("colour", "skill", "hints", "coach", "change_threshold", "min_fit")})
 
@@ -192,6 +290,12 @@ ui.on_message("typed_move", on_typed_move)
 ui.on_message("hint", on_hint)
 ui.on_message("board_voice", on_board_voice)
 ui.on_message("calibrate", on_calibrate)
+ui.on_message("lesson_open", on_lesson_open)
+ui.on_message("lesson_nav", on_lesson_nav)
+ui.on_message("lesson_move", on_lesson_move)
+ui.on_message("lesson_answer", on_lesson_answer)
+ui.on_message("lesson_board", on_lesson_board)
+ui.on_message("lesson_set_up", on_lesson_set_up)
 
 
 # ---- images for the web page ---------------------------------------------
