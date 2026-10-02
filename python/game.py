@@ -8,7 +8,7 @@ import threading
 import chess
 
 from announce import describe, draw_move
-from detector import infer_move, squares_touched
+from detector import infer_move, knocked_pieces, squares_touched
 from vision import change_scores, draw_grid, occupancy_mismatches, warp
 
 
@@ -38,6 +38,7 @@ class Game:
         self._hint = threading.Event()
         self.engine = None
         self.human = chess.WHITE
+        self._mentioned = set()             # knocked pieces already mentioned
 
     # ---- requests from the web page -------------------------------------
 
@@ -140,6 +141,7 @@ class Game:
         self.human = chess.WHITE if s["colour"] == "white" else chess.BLACK
         self.board = chess.Board()
         self.expected = None
+        self._mentioned = set()
         self.show_move(None)
         if self.cam.H is None:
             self.settings = None
@@ -210,14 +212,20 @@ class Game:
             extra, missing = occupancy_mismatches(settled, pieces)
             move, fit = infer_move(self.board, scores, s["min_fit"], (extra, missing))
             if move:
-                # a piece that changed a lot but is still on its square was knocked
                 touched = squares_touched(self.board, move)
-                knocked = [sq for sq in pieces if sq not in touched and sq not in missing
-                           and scores[sq] > s["change_threshold"]]
-                if knocked:
-                    names = ", ".join(chess.square_name(sq) for sq in knocked)
-                    self.say(f"The piece on {names} looks knocked. That's fine, "
-                             "but centre it on its square when you can.")
+                self._mentioned -= touched              # a piece moved there now: start afresh
+                knocked = knocked_pieces(self.board, move, scores, missing, s["change_threshold"])
+                if knocked is None:
+                    # most pieces changed: the board slid, so line the grid up
+                    # again (quietly unless it actually moves)
+                    if self.cam.realign(force=True):
+                        settled = self.cam.board()
+                    return move, settled
+                new = [sq for sq in knocked if sq not in self._mentioned][:2]
+                if new:
+                    self._mentioned |= set(new)
+                    names = " and ".join(chess.square_name(sq) for sq in new)
+                    self.say(f"The piece on {names} looks knocked. Centre it when you can.")
                 return move, settled
             misses += 1
             odd = sorted(set(extra) | set(missing))

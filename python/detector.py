@@ -3,6 +3,7 @@
 No piece recognition needed: we know the position before the move, so we
 only have to ask "which legal move explains the squares that changed?"."""
 import chess
+import numpy as np
 
 
 def squares_touched(board, move):
@@ -84,3 +85,21 @@ def infer_move(board, scores, min_fit=10.0, occupancy=None):
     if best is None or best_fit < min_fit:
         return None, best_fit
     return best, best_fit
+
+
+def knocked_pieces(board, move, scores, missing, threshold, most=3):
+    """Pieces that look knocked by `move`: still on their squares (not in
+    `missing`) and not part of the move, but changed a lot more than the
+    other pieces did. Returns None if more than `most` pieces changed like
+    that: then the whole board shifted (or the light changed), not a few
+    pieces, and nothing should be said about knocks."""
+    touched = squares_touched(board, move)
+    others = [sq for sq in board.piece_map() if sq not in touched and sq not in missing]
+    if not others:
+        return []
+    typical = float(np.median([scores[sq] for sq in others]))
+    knocked = [sq for sq in others if scores[sq] > threshold and scores[sq] > typical + threshold]
+    many = sum(scores[sq] > threshold for sq in others)
+    if many > most:
+        return None
+    return knocked

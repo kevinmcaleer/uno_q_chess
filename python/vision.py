@@ -227,18 +227,20 @@ class BoardCamera:
         self.H = homography_from_corners(corners)
         self.baseline = None
 
-    def realign(self):
+    def realign(self, force=False):
         """If the board has been nudged, find it again from its squares and
         move the grid onto it, keeping which corner is a1. Returns True if
         the grid moved. Only the cheap alignment check runs normally; the
-        slower board finder only when that check says the grid is off."""
+        slower board finder only when that check says the grid is off, or
+        with force=True (the pieces all changed at once, which a slide too
+        small for the check to see can do)."""
         if self.alignment is None or self.find_board is None or self.corners is None:
             return False
         frame = self.frame()
         now = self.alignment(frame, self.corners)
         if self.baseline is None:
             self.baseline = now
-        if self.baseline < 0.5 or now >= 0.85 * self.baseline:
+        if not force and (self.baseline < 0.5 or now >= 0.85 * self.baseline):
             return False                # still lined up (or the check can't tell)
         found = self.find_board(frame, self.corners)
         if not found:
@@ -246,7 +248,8 @@ class BoardCamera:
         c, f = np.float32(self.corners), np.float32(found)
         side = float(np.linalg.norm(c[0] - c[1])) / 8
         fixed = self.alignment(frame, found)
-        if np.abs(f - c).max() > 2 * side or fixed <= now:
+        shift = float(np.abs(f - c).max())
+        if shift > 2 * side or fixed < now or (fixed == now and shift < 0.02 * side):
             return False                # not a small nudge, or no better: leave it
         self.corners = [(round(float(x), 2), round(float(y), 2)) for x, y in found]
         self.H = homography_from_corners(self.corners)

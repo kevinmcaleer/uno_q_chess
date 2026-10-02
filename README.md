@@ -34,7 +34,7 @@ and giving you hints if you ask for them.
    en passant and promotion (assumed queen) are handled. It also checks
    which squares look occupied: the move's starting square must now look
    empty, and a piece you knock while moving (but that's still on its
-   square) doesn't count against the reading. The app tells you to centre it.
+   square) doesn't count against the reading. The app tells you to centre it (at most two pieces at a time, each only once). If nearly every piece changes at once, the board itself slid, so it lines the grid up again instead.
 5. **Computer's turn.** Stockfish picks a move. The web page shows it
    (and reads it aloud if you like), the LED matrix lights its from and to
    squares, and you make the move for it; the app checks you moved the
