@@ -58,7 +58,15 @@
           <button data-view="live">Live camera</button>
           <button data-view="calibrate">Calibrate</button>
         </div>
-        <div id="view-board" class="view"><img id="board-img" alt="straightened board" /></div>
+        <div id="view-board" class="view">
+          <div id="board-live">
+            <img id="board-img" alt="" />
+            <svg id="board-overlay" viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <p id="board-uncal" class="hidden">Calibrate the board to see it here.</p>
+          </div>
+          <label class="check"><input type="checkbox" id="show-pieces" checked /> Show the pieces the app is tracking</label>
+          <p id="occupancy-note" class="small"></p>
+        </div>
         <div id="view-live" class="view hidden"><img id="live-img" alt="live camera" /></div>
         <div id="view-calibrate" class="view hidden">
           <div class="row calib-tools">

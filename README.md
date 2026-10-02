@@ -31,7 +31,10 @@ and giving you hints if you ask for them.
    (the game starts from the normal starting position), so it asks
    python-chess for every legal move and picks the one whose squares
    changed while the rest of the board stayed quiet. Castling (4 squares),
-   en passant and promotion (assumed queen) are handled.
+   en passant and promotion (assumed queen) are handled. It also checks
+   which squares look occupied: the move's starting square must now look
+   empty, and a piece you knock while moving (but that's still on its
+   square) doesn't count against the reading. The app tells you to centre it.
 5. **Computer's turn.** Stockfish picks a move. The web page shows it
    (and reads it aloud if you like), the LED matrix lights its from and to
    squares, and you make the move for it; the app checks you moved the
@@ -39,6 +42,19 @@ and giving you hints if you ask for them.
 
 Because of step 4, the app never needs to recognise *what* a piece is, so
 ordinary pieces work. Special printed pieces just make it more reliable.
+
+If the board itself gets nudged during a game, the app notices the next
+time the board is still (the grid no longer lines up with the squares),
+finds the board again from its squares and moves the grid onto it, keeping
+which corner is a1. It says so, and saves the new calibration.
+
+The *Straightened board* tab shows the board as live video (at the
+camera's 15 fps), straightened so you can watch hands move pieces, with a
+small badge in each square for the piece the app thinks is there. Once a
+second, while nothing is moving, it also checks which squares look occupied:
+a square with no piece seen where one should be is outlined in red, and an
+unexpected piece in yellow, so you can spot when the board and the game
+have drifted apart.
 
 ## Repository layout
 
@@ -73,6 +89,9 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
 | `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
 | `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
+| `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
+| `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
+| `test_realign.py` | Offline test of the grid following the board when it's nudged mid-game |
 | `test_explain.py` | Offline test of the move explanations on classic positions |
 
 ## Running it on the UNO Q
@@ -126,6 +145,9 @@ python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
 python3 test_autocal.py           # automatic calibration
 python3 test_still.py             # stillness check with a noisy, flickering camera
+python3 test_occupancy.py         # spotting missing and unexpected pieces
+python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
+python3 test_realign.py           # the grid following the board when it's nudged
 python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
 ```
 

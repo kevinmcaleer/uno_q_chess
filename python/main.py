@@ -17,11 +17,12 @@ from arduino.app_bricks.web_ui import WebUI
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App, Bridge, Frame, Logger
 
-from autocal import find_board
+from autocal import alignment, find_board
 from engine import Engine, find_local
 from game import Game
 import stockfish_install
-from vision import BoardCamera, load_calibration, save_calibration
+from vision import (WARP_SIZE, BoardCamera, load_calibration, motion, occupancy_mismatches,
+                    save_calibration, warp)
 
 DATA_DIR = "/app/data" if os.path.isdir("/app") else os.path.join(os.path.dirname(__file__), "..", "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -29,11 +30,11 @@ CALIBRATION = os.path.join(DATA_DIR, "calibration.json")
 
 logger = Logger("ChessCamera")
 ui = WebUI()
-camera = Camera(resolution=(1280, 720), fps=10)     # first USB camera found
+camera = Camera(resolution=(1280, 720), fps=15)     # first USB camera found; 15 fps for smooth live video
 camera.start()
 H, corners = load_calibration(CALIBRATION)
-cam = BoardCamera(camera, H)
-cam.corners = corners                               # for adjusting them on the page
+cam = BoardCamera(camera, H, corners)               # corners: for adjusting them on the page
+cam.alignment, cam.find_board = alignment, find_board   # re-align if the board gets nudged
 
 log = []                                            # recent spoken messages, for new page loads
 
@@ -83,10 +84,20 @@ def make_engine(skill, think, on_wait=None):
 game = Game(cam, make_engine, say, send_state, show_move)
 
 
+def on_realign(corners):
+    save_calibration(CALIBRATION, corners)
+    say("The board moved, so I've lined the grid up with it again.")
+    send_state()
+
+
+cam.on_realign = on_realign
+
+
 # ---- web page -> app ------------------------------------------------------
 
 def on_connect(client):
     send_state()
+    ui.send_message("occupancy", occupancy)
     for text in log[-10:]:
         ui.send_message("say", {"text": text})
 
@@ -106,8 +117,8 @@ def on_hint(client, data):
 
 def on_calibrate(client, data):
     corners = [(round(float(x), 2), round(float(y), 2)) for x, y in data["corners"]]
-    cam.H = save_calibration(CALIBRATION, corners)
-    cam.corners = corners
+    save_calibration(CALIBRATION, corners)
+    cam.set_calibration(corners)
     game.calibrate_preview()
     say("Calibration saved. Check the grid lines up with the squares.")
     send_state()
@@ -167,19 +178,93 @@ def board_image():
                     headers={"Cache-Control": "no-store"})
 
 
+LIVE_SIZE = 560                                     # straightened live video, pixels square
+
+
+def board_live():
+    """The straightened board as live video, at the camera's frame rate, with
+    the grid and the computer's move. Each frame is warped straight to the
+    video size, which is cheaper than straightening at full size."""
+    scale = LIVE_SIZE / WARP_SIZE
+    S = np.diag([scale, scale, 1.0]).astype(np.float32)
+
+    def frames():
+        while True:
+            try:
+                img = cam.frame()                   # waits for the next camera frame
+            except RuntimeError:
+                continue
+            H = cam.H
+            if H is None:
+                time.sleep(0.5)
+                continue
+            top = cv2.warpPerspective(img, S @ H, (LIVE_SIZE, LIVE_SIZE))
+            step = LIVE_SIZE / 8
+            for i in range(9):
+                p = int(round(i * step))
+                cv2.line(top, (p, 0), (p, LIVE_SIZE), (0, 255, 0), 1)
+                cv2.line(top, (0, p), (LIVE_SIZE, p), (0, 255, 0), 1)
+            move = game.expected
+            if move:
+                ends = [(int((chess.square_file(sq) + 0.5) * step),
+                         int((7.5 - chess.square_rank(sq)) * step)) for sq in (move.from_square, move.to_square)]
+                cv2.arrowedLine(top, ends[0], ends[1], (0, 0, 255), 8, tipLength=0.25)
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(top, 75) + b"\r\n"
+    return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
 def live():
     def frames():
         while True:
-            img = cam.latest()
-            if img is not None:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(img, 70) + b"\r\n"
-            time.sleep(0.2)
+            try:
+                img = cam.frame()                   # every camera frame
+            except RuntimeError:
+                continue
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(img, 70) + b"\r\n"
     return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 ui.expose_api("GET", "/snapshot.jpg", snapshot)
 ui.expose_api("GET", "/board.jpg", board_image)
 ui.expose_api("GET", "/live", live)
+ui.expose_api("GET", "/board_live", board_live)
+
+
+# ---- does the camera agree with the tracked position? ----------------------
+
+occupancy = {"extra": [], "missing": []}
+
+
+def watch_occupancy():
+    """Once a second, while the board is still, compare which squares look
+    occupied with the tracked position. A disagreement has to last two checks
+    in a row (so a move the game hasn't read yet doesn't flash up)."""
+    global occupancy
+    prev = pending = None
+    while True:
+        time.sleep(1)
+        try:
+            img, H = cam.latest(), cam.H
+            if img is None or H is None:
+                continue
+            top = warp(img, H)
+            still = prev is not None and motion(prev, top) < 8
+            prev = top
+            if not still:
+                continue
+            pieces = {sq: p.color for sq, p in game.board.copy().piece_map().items()}
+            extra, missing = occupancy_mismatches(top, pieces)
+            found = {"extra": [chess.square_name(s) for s in extra],
+                     "missing": [chess.square_name(s) for s in missing]}
+            if found == pending and found != occupancy:
+                occupancy = found
+                ui.send_message("occupancy", occupancy)
+            pending = found
+        except Exception as e:
+            logger.warning(f"Occupancy check failed: {e}")
+
+
+threading.Thread(target=watch_occupancy, daemon=True).start()
 
 threading.Thread(target=game.run, daemon=True).start()
 show_move(None)
