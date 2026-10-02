@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Per-board / per-run outputs
+calibration.json
+last_move.png
+snapshot*.png
+# Bundles rebuilt from stl/
+*.zip
