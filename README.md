@@ -21,7 +21,10 @@ and giving you hints if you ask for them.
    the board in a camera snapshot. The app uses that to "straighten" every frame into a
    top-down 8x8 grid, so it knows which pixels belong to which square.
 2. **Waiting for stillness.** The app waits until the image stops changing
-   (your hand has left the board) before it looks at anything.
+   (your hand has left the board) before it looks at anything. It compares
+   each square's average colour, so webcam noise averages out, and ignores
+   brightness changes the whole board shares, so auto-exposure doesn't count
+   as movement.
 3. **Which squares changed?** It compares the settled board with the last
    settled board and scores how much each of the 64 squares changed.
 4. **Which legal move explains that?** The app always knows the position
@@ -68,6 +71,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `autocal.py` | Finds the board corners from the chequerboard pattern |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
 | `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
+| `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
 
 ## Running it on the UNO Q
 
@@ -119,6 +123,7 @@ cd python
 python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
 python3 test_autocal.py           # automatic calibration
+python3 test_still.py             # stillness check with a noisy, flickering camera
 ```
 
 ## Tuning
@@ -126,8 +131,9 @@ python3 test_autocal.py           # automatic calibration
 If moves are missed, raise the light level or lower the change threshold;
 if the wrong move is read, raise the minimum fit. Both are under *Tuning*
 in the New game panel and apply from the next game. If
-the app never says "Board ready", the camera is noisier than the stillness
-check allows (`motion_threshold` in `vision.py`, default 4).
+the app never says "Board ready", something in view keeps changing part of
+the board (a shadow, a flickering light on one side): raise `motion_threshold`
+in `vision.py` (default 8; a hand over the board measures 20 or more).
 
 ## 3D-printable pieces that read well from above
 
