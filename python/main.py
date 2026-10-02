@@ -21,8 +21,7 @@ from autocal import alignment, find_board
 from engine import Engine, find_local
 from game import Game
 import stockfish_install
-from announce import draw_move
-from vision import (BoardCamera, draw_grid, load_calibration, motion, occupancy_mismatches,
+from vision import (WARP_SIZE, BoardCamera, load_calibration, motion, occupancy_mismatches,
                     save_calibration, warp)
 
 DATA_DIR = "/app/data" if os.path.isdir("/app") else os.path.join(os.path.dirname(__file__), "..", "data")
@@ -31,7 +30,7 @@ CALIBRATION = os.path.join(DATA_DIR, "calibration.json")
 
 logger = Logger("ChessCamera")
 ui = WebUI()
-camera = Camera(resolution=(1280, 720), fps=10)     # first USB camera found
+camera = Camera(resolution=(1280, 720), fps=15)     # first USB camera found; 15 fps for smooth live video
 camera.start()
 H, corners = load_calibration(CALIBRATION)
 cam = BoardCamera(camera, H, corners)               # corners: for adjusting them on the page
@@ -179,28 +178,49 @@ def board_image():
                     headers={"Cache-Control": "no-store"})
 
 
+LIVE_SIZE = 560                                     # straightened live video, pixels square
+
+
 def board_live():
-    """The straightened board, live, with the grid and the computer's move."""
+    """The straightened board as live video, at the camera's frame rate, with
+    the grid and the computer's move. Each frame is warped straight to the
+    video size, which is cheaper than straightening at full size."""
+    scale = LIVE_SIZE / WARP_SIZE
+    S = np.diag([scale, scale, 1.0]).astype(np.float32)
+
     def frames():
         while True:
-            img, H = cam.latest(), cam.H
-            if img is not None and H is not None:
-                top = draw_grid(warp(img, H))
-                if game.expected:
-                    top = draw_move(top, game.expected)
-                top = cv2.resize(top, (560, 560), interpolation=cv2.INTER_AREA)
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(top, 75) + b"\r\n"
-            time.sleep(0.2)
+            try:
+                img = cam.frame()                   # waits for the next camera frame
+            except RuntimeError:
+                continue
+            H = cam.H
+            if H is None:
+                time.sleep(0.5)
+                continue
+            top = cv2.warpPerspective(img, S @ H, (LIVE_SIZE, LIVE_SIZE))
+            step = LIVE_SIZE / 8
+            for i in range(9):
+                p = int(round(i * step))
+                cv2.line(top, (p, 0), (p, LIVE_SIZE), (0, 255, 0), 1)
+                cv2.line(top, (0, p), (LIVE_SIZE, p), (0, 255, 0), 1)
+            move = game.expected
+            if move:
+                ends = [(int((chess.square_file(sq) + 0.5) * step),
+                         int((7.5 - chess.square_rank(sq)) * step)) for sq in (move.from_square, move.to_square)]
+                cv2.arrowedLine(top, ends[0], ends[1], (0, 0, 255), 8, tipLength=0.25)
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(top, 75) + b"\r\n"
     return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 def live():
     def frames():
         while True:
-            img = cam.latest()
-            if img is not None:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(img, 70) + b"\r\n"
-            time.sleep(0.2)
+            try:
+                img = cam.frame()                   # every camera frame
+            except RuntimeError:
+                continue
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(img, 70) + b"\r\n"
     return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 

@@ -48,7 +48,8 @@ time the board is still (the grid no longer lines up with the squares),
 finds the board again from its squares and moves the grid onto it, keeping
 which corner is a1. It says so, and saves the new calibration.
 
-The *Straightened board* tab shows the board live from the camera, with a
+The *Straightened board* tab shows the board as live video (at the
+camera's 15 fps), straightened so you can watch hands move pieces, with a
 small badge in each square for the piece the app thinks is there. Once a
 second, while nothing is moving, it also checks which squares look occupied:
 a square with no piece seen where one should be is outlined in red, and an
