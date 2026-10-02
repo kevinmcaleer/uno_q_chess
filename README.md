@@ -83,6 +83,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `engine.py` | Talks UCI to Stockfish |
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
+| `explain.py` | Tutor: says why a move is good or bad (hanging pieces, mates, forks, pins, missed captures) and grades it with Stockfish |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
 | `autocal.py` | Finds the board corners from the chequerboard pattern |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
@@ -91,6 +92,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
 | `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
 | `test_realign.py` | Offline test of the grid following the board when it's nudged mid-game |
+| `test_explain.py` | Offline test of the move explanations on classic positions |
 
 ## Running it on the UNO Q
 
@@ -146,6 +148,7 @@ python3 test_still.py             # stillness check with a noisy, flickering cam
 python3 test_occupancy.py         # spotting missing and unexpected pieces
 python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
 python3 test_realign.py           # the grid following the board when it's nudged
+python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
 ```
 
 ## Tuning
