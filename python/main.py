@@ -20,6 +20,7 @@ from arduino.app_utils import App, Bridge, Frame, Logger
 from autocal import alignment, find_board
 from engine import Engine, find_local
 from game import Game
+from speech import Speaker
 import stockfish_install
 from vision import (WARP_SIZE, BoardCamera, load_calibration, motion, occupancy_mismatches,
                     save_calibration, warp)
@@ -38,15 +39,43 @@ cam.alignment, cam.find_board = alignment, find_board   # re-align if the board 
 
 log = []                                            # recent spoken messages, for new page loads
 
+speaker = Speaker()                                 # the board's own speaker (see the README)
+board_voice = True                                  # speak on the board's speaker when it's there
+
 
 def say(text):
+    """Show a message on the page and speak it: on the board's speaker if
+    that's on and working, otherwise the page reads it out itself."""
     logger.info(text)
     log.append(text)
     del log[:-30]
+    on_board = board_voice and speaker.say(text)
     try:
-        ui.send_message("say", {"text": text})
+        ui.send_message("say", {"text": text, "board": on_board})
     except Exception:
         pass
+
+
+def voice_state():
+    return {"on": board_voice, "status": speaker.status()}
+
+
+def send_voice(state=None):
+    try:
+        ui.send_message("voice", state or voice_state())
+    except Exception:
+        pass
+
+
+def watch_voice():
+    """Tell the page when the board's speaker comes and goes."""
+    last = None
+    while True:
+        state = voice_state()
+        if state != last:
+            send_voice(state)
+            last = state
+        time.sleep(10)
 
 
 def send_state(state=None):
@@ -99,7 +128,8 @@ def on_connect(client):
     send_state()
     ui.send_message("occupancy", occupancy)
     for text in log[-10:]:
-        ui.send_message("say", {"text": text})
+        ui.send_message("say", {"text": text, "replay": True})
+    send_voice()
 
 
 def on_new_game(client, data):
@@ -109,6 +139,14 @@ def on_new_game(client, data):
 
 def on_typed_move(client, data):
     game.request_typed_move(str(data.get("move", "")))
+
+
+def on_board_voice(client, data):
+    global board_voice
+    board_voice = bool((data or {}).get("on"))
+    send_voice()
+    if board_voice:
+        say("I'll talk through the board's speaker.")
 
 
 def on_hint(client, data):
@@ -152,6 +190,7 @@ ui.on_message("find_board", on_find_board)
 ui.on_message("new_game", on_new_game)
 ui.on_message("typed_move", on_typed_move)
 ui.on_message("hint", on_hint)
+ui.on_message("board_voice", on_board_voice)
 ui.on_message("calibrate", on_calibrate)
 
 
@@ -265,6 +304,7 @@ def watch_occupancy():
 
 
 threading.Thread(target=watch_occupancy, daemon=True).start()
+threading.Thread(target=watch_voice, daemon=True).start()
 
 threading.Thread(target=game.run, daemon=True).start()
 show_move(None)

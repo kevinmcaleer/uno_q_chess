@@ -27,10 +27,20 @@ ui.on_message('say', (m) => {
   const li = document.createElement('li');
   li.textContent = m.text;
   $('#log').prepend(li);
-  if ($('#speak').checked && 'speechSynthesis' in window) {
+  // The board speaks it when its speaker is on and working; otherwise the
+  // browser reads it. Old messages replayed on page load aren't read again.
+  if (!m.board && !m.replay && $('#speak').checked && 'speechSynthesis' in window) {
     speechSynthesis.speak(new SpeechSynthesisUtterance(m.text));
   }
 });
+
+ui.on_message('voice', (v) => {
+  $('#board-voice').checked = v.on;
+  $('#voice-note').textContent = !v.on || v.status === 'ready' ? ''
+    : v.status === 'no voice' ? '(speech failed to load: the browser reads aloud instead)'
+    : '(no speaker set up on the board: the browser reads aloud instead)';
+});
+$('#board-voice').addEventListener('change', (e) => ui.send_message('board_voice', { on: e.target.checked }));
 
 // ---- board drawing ---------------------------------------------------------
 
