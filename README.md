@@ -67,11 +67,13 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `engine.py` | Talks UCI to Stockfish |
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
+| `explain.py` | Tutor: says why a move is good or bad (hanging pieces, mates, forks, pins, missed captures) and grades it with Stockfish |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
 | `autocal.py` | Finds the board corners from the chequerboard pattern |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
 | `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
 | `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
+| `test_explain.py` | Offline test of the move explanations on classic positions |
 
 ## Running it on the UNO Q
 
@@ -124,6 +126,7 @@ python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
 python3 test_autocal.py           # automatic calibration
 python3 test_still.py             # stillness check with a noisy, flickering camera
+python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
 ```
 
 ## Tuning

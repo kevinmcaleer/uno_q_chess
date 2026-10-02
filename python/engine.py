@@ -40,6 +40,7 @@ class Engine:
         self._send("uci")
         self._wait_for("uciok")
         # Skill Level 0 (beginner) .. 20 (full strength)
+        self.skill = skill
         self._send(f"setoption name Skill Level value {skill}")
         self._send("isready")
         self._wait_for("readyok")
@@ -83,6 +84,30 @@ class Engine:
     def suggest(self, board):
         """Engine's preferred move for the side to move, used for hints."""
         return self.play(board)
+
+    def evaluate(self, board, think_time=0.3):
+        """Full-strength look at the position: (cp, mate, best_move) for the
+        side to move. cp is centipawns (None if mate is set); mate is moves to
+        mate, negative if the side to move is getting mated. Used by explain.py."""
+        self._send("setoption name Skill Level value 20")
+        moves = " ".join(m.uci() for m in board.move_stack)
+        self._send(f"position fen {board.root().fen()}" + (f" moves {moves}" if moves else ""))
+        self._send(f"go movetime {int(think_time * 1000)}")
+        cp = mate = None
+        while True:
+            line = self.inp.readline()
+            if not line:
+                raise RuntimeError("Stockfish closed the connection")
+            words = line.split()
+            if words[:1] == ["info"] and "score" in words:
+                i = words.index("score")
+                kind, value = words[i + 1], int(words[i + 2])
+                cp, mate = (value, None) if kind == "cp" else (None, value)
+            elif words[:1] == ["bestmove"]:
+                best = None if words[1] == "(none)" else chess.Move.from_uci(words[1])
+                break
+        self._send(f"setoption name Skill Level value {self.skill}")
+        return cp, mate, best
 
     def close(self):
         try:
