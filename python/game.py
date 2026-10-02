@@ -17,6 +17,10 @@ class NewGame(Exception):
     """Raised inside the loop to drop the current game and start another."""
 
 
+class SetUp(Exception):
+    """The page says the lesson position is set up, whatever the camera thinks."""
+
+
 class TypedMove(Exception):
     def __init__(self, move):
         self.move = move
@@ -37,6 +41,7 @@ class Game:
         self._new_game = queue.Queue(maxsize=1)
         self._typed = queue.Queue()
         self._hint = threading.Event()
+        self._set_up = threading.Event()    # "It's set up" pressed during a lesson
         self.engine = None
         self.human = chess.WHITE
         self._mentioned = set()             # knocked pieces already mentioned
@@ -54,6 +59,26 @@ class Game:
             pass
         self._new_game.put(settings)
 
+    def request_lesson(self, board, on_move, change_threshold=25.0, min_fit=10.0):
+        """Watch the real board for a lesson move from `board`. on_move(move)
+        is called with each move read and returns True if it was right."""
+        self._replace(dict(lesson=board.copy(stack=False), on_move=on_move,
+                           change_threshold=float(change_threshold), min_fit=float(min_fit)))
+
+    def request_idle(self, status="Lesson: read the page, then press Next."):
+        """Stop watching the board (e.g. a lesson step with nothing to play)."""
+        self._replace(dict(idle=status))
+
+    def request_set_up(self):
+        self._set_up.set()
+
+    def _replace(self, settings):
+        try:
+            self._new_game.get_nowait()
+        except queue.Empty:
+            pass
+        self._new_game.put(settings)
+
     def request_typed_move(self, text):
         self._typed.put(text.strip())
 
@@ -65,8 +90,9 @@ class Game:
         return {
             "fen": self.board.fen(),
             "status": self.status,
-            "playing": self.settings is not None,
-            "human": self.settings["colour"] if self.settings else "white",
+            "playing": self.settings is not None and "lesson" not in self.settings,
+            "lesson": self.settings is not None and "lesson" in self.settings,
+            "human": (self.settings or {}).get("colour", "white"),
             "turn": "white" if self.board.turn == chess.WHITE else "black",
             "last_move": last,
             "expected": self.expected.uci() if self.expected else None,
@@ -88,7 +114,14 @@ class Game:
         settings = self._new_game.get()
         while True:
             try:
-                self._play(settings)
+                if "idle" in settings:
+                    self.settings = None
+                    self.expected = None
+                    self._set_status(settings["idle"])
+                elif "lesson" in settings:
+                    self._lesson(settings)
+                else:
+                    self._play(settings)
                 settings = self._new_game.get()      # game over: wait for the next one
             except NewGame as e:
                 settings = e.args[0]
@@ -203,6 +236,86 @@ class Game:
         self.say(f"Game over: {self.board.result()}")
         self._set_status(f"Game over: {self.board.result()}. Start a new game when you're ready.")
         self.settings = None
+
+    # ---- lessons on the real board -------------------------------------
+
+    def _lesson(self, s):
+        """Wait for the lesson position to be on the board, then read moves
+        until on_move says one was right."""
+        self.settings = s
+        self.board = s["lesson"]
+        self.human = self.board.turn
+        self.expected = None
+        self.show_move(None)
+        self._set_up.clear()
+        self._set_status("Lesson: checking the position on the board...")
+        if self.cam.H is None:
+            self._set_status("Calibrate the board to use it for lessons.")
+            raise NewGame(self._new_game.get())
+        reference = self._lesson_position()
+        self._show_board(reference)
+        self._set_status("Lesson: make the move on the board.")
+        while True:
+            move, settled = self._read_move(reference)
+            if s["on_move"](move):
+                return
+            self.say("Put the piece back where it was, then try again.")
+            self._set_status("Lesson: put the piece back, then try again.")
+            self._wait_for_undo(reference, settled)
+            self._set_status("Lesson: make the move on the board.")
+
+    def _lesson_position(self):
+        """Wait until the camera sees pieces where the lesson needs them (or
+        the page says it's set up). Returns the settled board image."""
+        said = None
+        thr = self.settings["change_threshold"]
+
+        def check():
+            self._check_new_game_only()
+            if self._set_up.is_set():
+                raise SetUp()
+
+        while True:
+            try:
+                img = self.cam.wait_until_still(check)
+                if self.cam.realign():
+                    img = self.cam.board()
+                pieces = {sq: p.color for sq, p in self.board.piece_map().items()}
+                extra, missing = occupancy_mismatches(img, pieces)
+                if not extra and not missing:
+                    return img
+                message = self._setup_message(extra, missing)
+                if message != said:
+                    self.say(message)
+                    said = message
+                self._set_status("Lesson: set up the position shown on the page.")
+                self.cam.wait_for_board_change(img, thr, check)
+            except SetUp:
+                self._set_up.clear()
+                return self.cam.wait_until_still(self._check_new_game_only)
+
+    def _setup_message(self, extra, missing):
+        if len(extra) + len(missing) > 6:
+            return ("Set up the position shown on the page. Press It's set up if the camera "
+                    "doesn't notice.")
+        groups = {}                         # "white pawn" -> squares
+        for sq in missing:
+            p = self.board.piece_at(sq)
+            name = f"{'white' if p.color else 'black'} {chess.piece_name(p.piece_type)}"
+            groups.setdefault(name, []).append(chess.square_name(sq))
+        join = lambda xs: xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+        parts = [f"put {'a ' + name if len(sqs) == 1 else name + 's'} on {join(sqs)}"
+                 for name, sqs in groups.items()]
+        if extra:
+            parts.append("clear " + join([chess.square_name(sq) for sq in extra]))
+        text = "; ".join(parts)
+        return text[0].upper() + text[1:] + "."
+
+    def _wait_for_undo(self, reference, wrong):
+        """After a wrong lesson move, wait until the board changes again: back
+        to how it was, or (the next read will tell) another move."""
+        thr = self.settings["change_threshold"]
+        self.cam.wait_for_board_change(wrong, thr, self._check_new_game_only)
 
     def _coach(self, move):
         """Say why the human's move was good or bad (board before the move).

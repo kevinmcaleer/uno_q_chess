@@ -60,13 +60,9 @@ function piecesFromFen(fen) {
   return pieces;
 }
 
-function drawBoard(s) {
-  const pieces = piecesFromFen(s.fen);
-  const mark = (uci) => (uci ? [uci.slice(0, 2), uci.slice(2, 4)] : []);
-  const last = mark(s.last_move);
-  const expected = mark(s.expected);
-  const flip = s.human === 'black';
-  const board = $('#board');
+// marks: { squareName: ['class', ...] }; onClick(squareName) makes it clickable.
+function renderBoard(board, fen, { flip = false, marks = {}, onClick = null } = {}) {
+  const pieces = piecesFromFen(fen);
   board.innerHTML = '';
   for (let r = 0; r < 8; r++) {
     for (let f = 0; f < 8; f++) {
@@ -75,8 +71,7 @@ function drawBoard(s) {
       const name = squareName(file, rank);
       const sq = document.createElement('div');
       sq.className = 'sq ' + ((file + rank) % 2 ? 'light' : 'dark');
-      if (expected.includes(name)) sq.classList.add('expected');
-      else if (last.includes(name)) sq.classList.add('last');
+      for (const c of marks[name] || []) sq.classList.add(c);
       const p = pieces[name];
       if (p) {
         const span = document.createElement('span');
@@ -90,9 +85,18 @@ function drawBoard(s) {
         c.textContent = name;
         sq.appendChild(c);
       }
+      if (onClick) sq.addEventListener('click', () => onClick(name));
       board.appendChild(sq);
     }
   }
+}
+
+function drawBoard(s) {
+  const marks = {};
+  const mark = (uci, cls) => { if (uci) for (const n of [uci.slice(0, 2), uci.slice(2, 4)]) marks[n] = [cls]; };
+  mark(s.last_move, 'last');
+  mark(s.expected, 'expected');
+  renderBoard($('#board'), s.fen, { flip: s.human === 'black', marks });
 }
 
 // ---- controls --------------------------------------------------------------
@@ -442,3 +446,109 @@ $('#calib-save').addEventListener('click', () => {
   updateBoardStream();
 });
 window.addEventListener('resize', drawCalibration);
+
+// ---- lessons ----------------------------------------------------------------
+// The app holds the lessons and checks each move; the page shows the current
+// step and sends clicked moves. With "Use my real board" the camera reads them.
+
+let lesson = { id: null };
+let lessonList = [];
+let picked = null;                     // square clicked first, for a two-click move
+let answer = null;                     // move shown by Show me
+
+const DONE_KEY = 'chess-lessons-done';
+function doneLessons() {
+  try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || '[]')); } catch { return new Set(); }
+}
+function markDone(id) {
+  const done = doneLessons();
+  done.add(id);
+  try { localStorage.setItem(DONE_KEY, JSON.stringify([...done])); } catch { /* private mode */ }
+}
+
+function showMode(mode) {
+  document.querySelectorAll('.modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('.mode-play').forEach((e) => e.classList.toggle('hidden', mode !== 'play'));
+  document.querySelectorAll('.mode-lessons').forEach((e) => e.classList.toggle('hidden', mode !== 'lessons'));
+  try { localStorage.setItem('chess-mode', mode); } catch { /* ignore */ }
+}
+document.querySelectorAll('.modes button').forEach((b) => b.addEventListener('click', () => showMode(b.dataset.mode)));
+try { if (localStorage.getItem('chess-mode') === 'lessons') showMode('lessons'); } catch { /* ignore */ }
+
+function drawLessonList() {
+  const done = doneLessons();
+  const list = $('#lesson-list');
+  list.innerHTML = '';
+  let section = null;
+  let chips = null;
+  for (const l of lessonList) {
+    if (l.section !== section) {
+      section = l.section;
+      const h = document.createElement('h3');
+      h.textContent = section;
+      chips = document.createElement('div');
+      chips.className = 'chips';
+      list.append(h, chips);
+    }
+    const b = document.createElement('button');
+    b.textContent = l.title;
+    if (done.has(l.id)) b.classList.add('done');
+    b.addEventListener('click', () => ui.send_message('lesson_open', { id: l.id }));
+    chips.appendChild(b);
+  }
+}
+
+function drawLesson() {
+  const open = !!lesson.id;
+  $('#lesson').classList.toggle('hidden', !open);
+  $('#lesson-list').classList.toggle('hidden', open);
+  if (!open) { drawLessonList(); return; }
+  if (lesson.finished) markDone(lesson.id);
+  $('#lesson-title').textContent = lesson.title;
+  $('#lesson-progress').textContent = `Step ${lesson.step + 1} of ${lesson.steps}`;
+  $('#lesson-text').textContent = lesson.finished ? 'Lesson complete. Well done!' : lesson.text;
+  const fb = $('#lesson-feedback');
+  fb.textContent = lesson.feedback;
+  fb.className = 'feedback ' + (lesson.feedback.startsWith('Correct') ? 'good' : lesson.feedback ? 'bad' : '');
+  const marks = {};
+  const add = (name, cls) => { (marks[name] = marks[name] || []).push(cls); };
+  for (const n of lesson.show) add(n, 'show');
+  if (lesson.last_move) { add(lesson.last_move.slice(0, 2), 'last'); add(lesson.last_move.slice(2, 4), 'last'); }
+  if (answer) { add(answer.slice(0, 2), 'expected'); add(answer.slice(2, 4), 'expected'); }
+  if (picked) add(picked, 'selected');
+  renderBoard($('#lesson-board'), lesson.fen, { marks, onClick: lesson.wants_move ? clickSquare : null });
+  $('#lesson-back').disabled = lesson.step === 0;
+  $('#lesson-answer').disabled = !lesson.wants_move;
+  $('#lesson-next').disabled = lesson.wants_move || lesson.finished;
+  $('#lesson-next').textContent = lesson.step + 1 === lesson.steps ? 'Finish' : 'Next';
+  $('#lesson-on-board').checked = lesson.on_board;
+  $('#lesson-board-tools').classList.toggle('hidden', !(lesson.on_board && lesson.wants_move));
+}
+
+function clickSquare(name) {
+  const pieces = piecesFromFen(lesson.fen);
+  const mine = (p) => p && (p === p.toUpperCase()) === (lesson.turn === 'white');
+  if (picked && picked !== name && !mine(pieces[name])) {
+    ui.send_message('lesson_move', { move: picked + name });
+    picked = null;
+  } else {
+    picked = pieces[name] && picked !== name ? name : null;
+  }
+  drawLesson();
+}
+
+ui.on_message('lessons', (m) => { lessonList = m.lessons; drawLesson(); });
+ui.on_message('lesson', (l) => {
+  if (l.id !== lesson.id || l.step !== lesson.step) { picked = null; answer = null; }
+  lesson = l;
+  drawLesson();
+});
+ui.on_message('lesson_answer', (m) => { answer = m.move; drawLesson(); });
+
+$('#lesson-close').addEventListener('click', () => { lesson = { id: null }; drawLesson(); });
+$('#lesson-back').addEventListener('click', () => ui.send_message('lesson_nav', { action: 'back' }));
+$('#lesson-next').addEventListener('click', () => ui.send_message('lesson_nav', { action: 'next' }));
+$('#lesson-restart').addEventListener('click', () => ui.send_message('lesson_nav', { action: 'restart' }));
+$('#lesson-answer').addEventListener('click', () => ui.send_message('lesson_answer', {}));
+$('#lesson-set-up').addEventListener('click', () => ui.send_message('lesson_set_up', {}));
+$('#lesson-on-board').addEventListener('change', (e) => ui.send_message('lesson_board', { on: e.target.checked }));
