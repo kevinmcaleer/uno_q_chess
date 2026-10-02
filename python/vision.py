@@ -96,6 +96,49 @@ def motion(before, after):
     return float(np.abs(resid).sum(axis=1).max())
 
 
+def occupancy_mismatches(board_img, pieces):
+    """Squares where the camera disagrees with the tracked position.
+
+    pieces: {square: True for a white piece, False for black} that should be
+    on the board. Each square is scored by how different it looks from an
+    empty square of its colour right now (average colour, and how busy it
+    is). The cut-off between "looks empty" and "looks occupied" sits halfway
+    between the typical empty square and the typical tracked piece of that
+    colour on that square colour (a white piece on a light square looks much
+    less different than a black one), so it adapts to the lighting and the
+    pieces. Returns (looks_occupied_but_empty, looks_empty_but_occupied)."""
+    lab = cv2.cvtColor(board_img, cv2.COLOR_BGR2LAB).astype(np.float32)
+    mean, busy = np.empty((64, 3), np.float32), np.empty(64, np.float32)
+    for sq in range(64):
+        x0, y0, x1, y1 = square_rect(sq)
+        patch = lab[y0:y1, x0:x1].reshape(-1, 3)
+        mean[sq], busy[sq] = patch.mean(axis=0), patch.std(axis=0).sum()
+    extra, missing = [], []
+    for parity in (0, 1):                      # 0: dark squares, 1: light squares
+        squares = [sq for sq in range(64) if (sq % 8 + sq // 8) % 2 == parity]
+        empty = [sq for sq in squares if sq not in pieces]
+        if len(empty) < 3:
+            continue                           # too few empty squares to compare with
+        m, b = np.median(mean[empty], axis=0), np.median(busy[empty])
+        score = {sq: float(np.abs(mean[sq] - m).sum() + max(0.0, busy[sq] - b)) for sq in squares}
+        empty_typ = float(np.median([score[sq] for sq in empty]))
+        cuts = {}
+        for colour in (True, False):
+            group = [score[sq] for sq in squares if pieces.get(sq) is colour]
+            if group:
+                cuts[colour] = max((empty_typ + float(np.median(group))) / 2, empty_typ + 8)
+        # a piece appearing where there should be none: the easier-to-see colour
+        # would be obvious, so judge by the harder one (the lowest cut)
+        new_cut = min(cuts.values()) if cuts else empty_typ + 15
+        for sq in squares:
+            if sq in pieces:
+                if score[sq] < cuts[pieces[sq]]:
+                    missing.append(sq)
+            elif score[sq] > new_cut:
+                extra.append(sq)
+    return sorted(extra), sorted(missing)
+
+
 def draw_grid(board_img):
     """Straightened board with the 8x8 grid on it, to check calibration."""
     img = board_img.copy()

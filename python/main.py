@@ -21,7 +21,9 @@ from autocal import find_board
 from engine import Engine, find_local
 from game import Game
 import stockfish_install
-from vision import BoardCamera, load_calibration, save_calibration
+from announce import draw_move
+from vision import (BoardCamera, draw_grid, load_calibration, motion, occupancy_mismatches,
+                    save_calibration, warp)
 
 DATA_DIR = "/app/data" if os.path.isdir("/app") else os.path.join(os.path.dirname(__file__), "..", "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -87,6 +89,7 @@ game = Game(cam, make_engine, say, send_state, show_move)
 
 def on_connect(client):
     send_state()
+    ui.send_message("occupancy", occupancy)
     for text in log[-10:]:
         ui.send_message("say", {"text": text})
 
@@ -167,6 +170,21 @@ def board_image():
                     headers={"Cache-Control": "no-store"})
 
 
+def board_live():
+    """The straightened board, live, with the grid and the computer's move."""
+    def frames():
+        while True:
+            img, H = cam.latest(), cam.H
+            if img is not None and H is not None:
+                top = draw_grid(warp(img, H))
+                if game.expected:
+                    top = draw_move(top, game.expected)
+                top = cv2.resize(top, (560, 560), interpolation=cv2.INTER_AREA)
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg(top, 75) + b"\r\n"
+            time.sleep(0.2)
+    return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
 def live():
     def frames():
         while True:
@@ -180,6 +198,44 @@ def live():
 ui.expose_api("GET", "/snapshot.jpg", snapshot)
 ui.expose_api("GET", "/board.jpg", board_image)
 ui.expose_api("GET", "/live", live)
+ui.expose_api("GET", "/board_live", board_live)
+
+
+# ---- does the camera agree with the tracked position? ----------------------
+
+occupancy = {"extra": [], "missing": []}
+
+
+def watch_occupancy():
+    """Once a second, while the board is still, compare which squares look
+    occupied with the tracked position. A disagreement has to last two checks
+    in a row (so a move the game hasn't read yet doesn't flash up)."""
+    global occupancy
+    prev = pending = None
+    while True:
+        time.sleep(1)
+        try:
+            img, H = cam.latest(), cam.H
+            if img is None or H is None:
+                continue
+            top = warp(img, H)
+            still = prev is not None and motion(prev, top) < 8
+            prev = top
+            if not still:
+                continue
+            pieces = {sq: p.color for sq, p in game.board.copy().piece_map().items()}
+            extra, missing = occupancy_mismatches(top, pieces)
+            found = {"extra": [chess.square_name(s) for s in extra],
+                     "missing": [chess.square_name(s) for s in missing]}
+            if found == pending and found != occupancy:
+                occupancy = found
+                ui.send_message("occupancy", occupancy)
+            pending = found
+        except Exception as e:
+            logger.warning(f"Occupancy check failed: {e}")
+
+
+threading.Thread(target=watch_occupancy, daemon=True).start()
 
 threading.Thread(target=game.run, daemon=True).start()
 show_move(None)

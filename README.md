@@ -40,6 +40,13 @@ and giving you hints if you ask for them.
 Because of step 4, the app never needs to recognise *what* a piece is, so
 ordinary pieces work. Special printed pieces just make it more reliable.
 
+The *Straightened board* tab shows the board live from the camera, with a
+small badge in each square for the piece the app thinks is there. Once a
+second, while nothing is moving, it also checks which squares look occupied:
+a square with no piece seen where one should be is outlined in red, and an
+unexpected piece in yellow, so you can spot when the board and the game
+have drifted apart.
+
 ## Repository layout
 
 The repository is an App Lab app: `app.yaml`, `python/`, `assets/`,
@@ -72,6 +79,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
 | `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
 | `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
+| `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
 
 ## Running it on the UNO Q
 
@@ -124,6 +132,7 @@ python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
 python3 test_autocal.py           # automatic calibration
 python3 test_still.py             # stillness check with a noisy, flickering camera
+python3 test_occupancy.py         # spotting missing and unexpected pieces
 ```
 
 ## Tuning

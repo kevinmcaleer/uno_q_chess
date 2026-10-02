@@ -17,8 +17,11 @@ ui.on_message('state', (s) => {
     li.textContent = s.moves[i] + (s.moves[i + 1] ? '  ' + s.moves[i + 1] : '');
     $('#moves').appendChild(li);
   }
-  refreshBoardImage();
+  drawOverlay();
 });
+
+let occupancy = { extra: [], missing: [] };
+ui.on_message('occupancy', (o) => { occupancy = o; drawOverlay(); });
 
 ui.on_message('say', (m) => {
   const li = document.createElement('li');
@@ -33,8 +36,8 @@ ui.on_message('say', (m) => {
 
 function squareName(file, rank) { return 'abcdefgh'[file] + (rank + 1); }
 
-function drawBoard(s) {
-  const rows = s.fen.split(' ')[0].split('/');           // rank 8 first
+function piecesFromFen(fen) {
+  const rows = fen.split(' ')[0].split('/');             // rank 8 first
   const pieces = {};
   rows.forEach((row, i) => {
     let file = 0;
@@ -44,6 +47,11 @@ function drawBoard(s) {
       file += 1;
     }
   });
+  return pieces;
+}
+
+function drawBoard(s) {
+  const pieces = piecesFromFen(s.fen);
   const mark = (uci) => (uci ? [uci.slice(0, 2), uci.slice(2, 4)] : []);
   const last = mark(s.last_move);
   const expected = mark(s.expected);
@@ -103,7 +111,64 @@ $('#type-move').addEventListener('submit', (e) => {
 
 // ---- camera views ----------------------------------------------------------
 
-function refreshBoardImage() { $('#board-img').src = 'board.jpg?t=' + Date.now(); }
+// The straightened board streams live while its tab is open. On top, each
+// tracked piece gets a small badge in its square's corner, and squares where
+// the camera disagrees with the tracked position are outlined.
+
+const NAMES = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
+let boardView = true;
+
+function updateBoardStream() {
+  const calibrated = !!(state && state.calibrated);
+  const want = boardView && calibrated ? 'board_live' : '';
+  const img = $('#board-img');
+  if ((img.getAttribute('src') || '') !== want) {
+    if (want) img.src = want; else img.removeAttribute('src');
+  }
+  $('#board-uncal').classList.toggle('hidden', calibrated);
+  $('#board-overlay').classList.toggle('hidden', !calibrated);
+}
+
+function drawOverlay() {
+  updateBoardStream();
+  const svg = $('#board-overlay');
+  svg.innerHTML = '';
+  if (!state) return;
+  const el = (tag, attrs, text) => {
+    const e = document.createElementNS(svgNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text) e.textContent = text;
+    svg.appendChild(e);
+    return e;
+  };
+  // the straightened board always has a8 top-left, as the camera sees it
+  const xy = (name) => ['abcdefgh'.indexOf(name[0]), 8 - Number(name[1])];
+  if ($('#show-pieces').checked) {
+    for (const [name, p] of Object.entries(piecesFromFen(state.fen))) {
+      const [x, y] = xy(name);
+      const white = p === p.toUpperCase();
+      el('rect', { x: x + 0.04, y: y + 0.04, width: 0.38, height: 0.38, rx: 0.08,
+                   class: white ? 'badge w' : 'badge b' });
+      el('text', { x: x + 0.23, y: y + 0.25, class: white ? 'glyph w' : 'glyph b' }, GLYPH[p.toLowerCase()] + '\uFE0E')
+        .appendChild(document.createElementNS(svgNS, 'title')).textContent =
+          `${white ? 'White' : 'Black'} ${NAMES[p.toLowerCase()]} on ${name}`;
+    }
+  }
+  for (const [kind, list] of [['missing', occupancy.missing], ['extra', occupancy.extra]]) {
+    for (const name of list) {
+      const [x, y] = xy(name);
+      el('rect', { x: x + 0.05, y: y + 0.05, width: 0.9, height: 0.9, class: 'mismatch ' + kind });
+      el('text', { x: x + 0.82, y: y + 0.3, class: 'mismatch-mark' }, '?');
+    }
+  }
+  const parts = [];
+  if (occupancy.missing.length) parts.push(`no piece on ${occupancy.missing.join(', ')}`);
+  if (occupancy.extra.length) parts.push(`an unexpected piece on ${occupancy.extra.join(', ')}`);
+  $('#occupancy-note').textContent = parts.length
+    ? `The camera sees ${parts.join(' and ')}. Check the board matches the game.` : '';
+}
+
+$('#show-pieces').addEventListener('change', drawOverlay);
 
 document.querySelectorAll('.tabs button').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -111,7 +176,8 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
     const view = btn.dataset.view;
     for (const v of ['board', 'live', 'calibrate']) $('#view-' + v).classList.toggle('hidden', v !== view);
     $('#live-img').src = view === 'live' ? 'live' : '';            // only stream while visible
-    if (view === 'board') refreshBoardImage();
+    boardView = view === 'board';
+    updateBoardStream();
     btn.closest('.card').classList.toggle('wide', view === 'calibrate');
     if (view === 'calibrate') openCalibration();
   });
@@ -362,6 +428,6 @@ $('#calib-refresh').addEventListener('click', takeSnapshot);
 $('#calib-save').addEventListener('click', () => {
   ui.send_message('calibrate', { corners });
   document.querySelector('.tabs button[data-view=board]').click();
-  setTimeout(refreshBoardImage, 500);
+  updateBoardStream();
 });
 window.addEventListener('resize', drawCalibration);
