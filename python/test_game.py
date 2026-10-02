@@ -19,7 +19,7 @@ from vision import BoardCamera, homography_from_corners
 
 
 class FakeCamera:
-    """Renders each position once (test_detector.py covers per-frame noise)."""
+    """Renders each position once (test_still.py covers per-frame noise and flicker)."""
 
     def __init__(self):
         self.board = chess.Board()

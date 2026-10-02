@@ -17,6 +17,7 @@ from arduino.app_bricks.web_ui import WebUI
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App, Bridge, Frame, Logger
 
+from autocal import find_board
 from engine import Engine, find_local
 from game import Game
 import stockfish_install
@@ -30,7 +31,9 @@ logger = Logger("ChessCamera")
 ui = WebUI()
 camera = Camera(resolution=(1280, 720), fps=10)     # first USB camera found
 camera.start()
-cam = BoardCamera(camera, load_calibration(CALIBRATION))
+H, corners = load_calibration(CALIBRATION)
+cam = BoardCamera(camera, H)
+cam.corners = corners                               # for adjusting them on the page
 
 log = []                                            # recent spoken messages, for new page loads
 
@@ -46,8 +49,9 @@ def say(text):
 
 
 def send_state(state=None):
+    state = dict(state or game.state(), corners=cam.corners)
     try:
-        ui.send_message("state", state or game.state())
+        ui.send_message("state", state)
     except Exception:
         pass
 
@@ -101,14 +105,39 @@ def on_hint(client, data):
 
 
 def on_calibrate(client, data):
-    corners = [(int(round(x)), int(round(y))) for x, y in data["corners"]]
+    corners = [(round(float(x), 2), round(float(y), 2)) for x, y in data["corners"]]
     cam.H = save_calibration(CALIBRATION, corners)
+    cam.corners = corners
     game.calibrate_preview()
     say("Calibration saved. Check the grid lines up with the squares.")
     send_state()
 
 
+def on_find_board(client, data):
+    """Find the board from its squares (in the background: it can take a few
+    seconds on the UNO Q). With corners, snap those to the squares."""
+    approx = (data or {}).get("corners")
+
+    def work():
+        frame = cam.latest()
+        found = find_board(frame, approx) if frame is not None else None
+        if found:
+            message = ("Found the board. Check the grid and that a1 (shaded) is in the right "
+                       "corner, use Rotate labels if not, then save.")
+        elif approx:
+            message = ("Couldn't snap to the squares. Make sure the whole board is in view and "
+                       "evenly lit, or adjust the corners by hand.")
+        else:
+            message = ("Couldn't find the board. It works best on an empty board; you can also "
+                       "click the corners roughly and press Snap to squares.")
+        ui.send_message("board_found", {"corners": [list(c) for c in found] if found else None,
+                                        "message": message})
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 ui.on_connect(on_connect)
+ui.on_message("find_board", on_find_board)
 ui.on_message("new_game", on_new_game)
 ui.on_message("typed_move", on_typed_move)
 ui.on_message("hint", on_hint)

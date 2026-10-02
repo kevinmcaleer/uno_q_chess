@@ -12,13 +12,14 @@ INNER = 0.6                     # only compare the middle 60% of each square
 
 
 def load_calibration(path):
-    """Return the saved homography, or None if the board isn't calibrated yet."""
+    """Return (homography, corners), or (None, None) if the board isn't
+    calibrated yet."""
     try:
         with open(path) as f:
             data = json.load(f)
     except FileNotFoundError:
-        return None
-    return np.array(data["homography"], dtype=np.float32)
+        return None, None
+    return np.array(data["homography"], dtype=np.float32), data["corners"]
 
 
 def save_calibration(path, corners):
@@ -62,6 +63,37 @@ def change_scores(before, after):
         x0, y0, x1, y1 = square_rect(sq)
         scores.append(float(diff[y0:y1, x0:x1].mean()))
     return scores
+
+
+def square_means(board_img):
+    """Average LAB colour of the inner part of each square: 64x3 floats."""
+    lab = cv2.cvtColor(board_img, cv2.COLOR_BGR2LAB).astype(np.float32)
+    out = np.empty((64, 3), np.float32)
+    for sq in range(64):
+        x0, y0, x1, y1 = square_rect(sq)
+        out[sq] = lab[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0)
+    return out
+
+
+def motion(before, after):
+    """How much the board moved between two warped images: the largest change
+    in any square's average colour, after removing the change the whole board
+    shares (exposure or white balance, fitted as gain and offset per colour
+    channel). Near 0 for a still board, however noisy the camera; a hand or a
+    moving piece gives tens."""
+    a, b = square_means(before), square_means(after)
+    resid = np.empty_like(a)
+    for ch in range(3):
+        x, y = a[:, ch], b[:, ch]
+        keep = np.ones(64, bool)
+        for _ in range(2):            # refit without the squares a hand or piece changed
+            if np.ptp(x[keep]) > 1:
+                gain, offset = np.polyfit(x[keep], y[keep], 1)
+            else:
+                gain, offset = 1.0, float(np.median(y - x))
+            resid[:, ch] = y - (gain * x + offset)
+            keep = np.abs(resid[:, ch]) <= np.sort(np.abs(resid[:, ch]))[47]
+    return float(np.abs(resid).sum(axis=1).max())
 
 
 def draw_grid(board_img):
@@ -119,25 +151,32 @@ class BoardCamera:
     def board(self):
         return warp(self.frame(), self.H)
 
-    def wait_until_still(self, check=lambda: None, still_frames=8, motion_threshold=4.0):
+    def wait_until_still(self, check=lambda: None, still_frames=8, motion_threshold=8.0):
         """Block until the board image stops changing (hands are out of the way)
-        and return that settled, warped image."""
+        and return that settled, warped image.
+
+        Motion is the change in each square's average colour, not pixel by
+        pixel, so webcam noise averages out. A change shared by the whole board
+        (auto-exposure or white balance drifting) is taken off first, so only a
+        hand or a piece moving on some squares counts."""
         prev = self.board()
         calm = 0
+        self.motion = None
         while True:
             check()
             time.sleep(0.1)
             cur = self.board()
-            motion = max(change_scores(prev, cur))
-            calm = calm + 1 if motion < motion_threshold else 0
+            self.motion = motion(prev, cur)
+            calm = calm + 1 if self.motion < motion_threshold else 0
             prev = cur
             if calm >= still_frames:
                 return cur
 
     def wait_for_board_change(self, reference, change_threshold, check=lambda: None, **kw):
         """Wait until the board has settled into a state that differs from
-        `reference` on at least one square."""
+        `reference` on at least one square (beyond any whole-board lighting change)."""
         while True:
             settled = self.wait_until_still(check, **kw)
-            if max(change_scores(reference, settled)) > change_threshold:
+            scores = change_scores(reference, settled)
+            if max(scores) - float(np.median(scores)) > change_threshold:
                 return settled

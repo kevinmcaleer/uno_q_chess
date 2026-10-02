@@ -21,7 +21,10 @@ and giving you hints if you ask for them.
    the board in a camera snapshot. The app uses that to "straighten" every frame into a
    top-down 8x8 grid, so it knows which pixels belong to which square.
 2. **Waiting for stillness.** The app waits until the image stops changing
-   (your hand has left the board) before it looks at anything.
+   (your hand has left the board) before it looks at anything. It compares
+   each square's average colour, so webcam noise averages out, and ignores
+   brightness changes the whole board shares, so auto-exposure doesn't count
+   as movement.
 3. **Which squares changed?** It compares the settled board with the last
    settled board and scores how much each of the 64 squares changed.
 4. **Which legal move explains that?** The app always knows the position
@@ -65,7 +68,10 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
+| `autocal.py` | Finds the board corners from the chequerboard pattern |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
+| `test_autocal.py` | Offline test of automatic calibration on near, far and rotated boards |
+| `test_still.py` | Offline test of the stillness check with webcam noise, exposure drift and a hand |
 
 ## Running it on the UNO Q
 
@@ -78,11 +84,20 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
    the app downloads Stockfish (about 30 MB) into `data/`. The page says
    "Downloading Stockfish" until it's ready.
 4. Open `http://<UNO-Q-IP>:7000` on your phone or computer.
-5. **Calibrate:** in the Camera panel, choose *Calibrate* and click the outer
-   corners of a8, h8, h1 and a1 in that order, then *Save calibration*. The
-   *Straightened board* view should show the grid lined up with the squares,
-   a8 top left. Calibration is saved in `data/calibration.json` and kept
-   between runs; redo it if the camera moves.
+5. **Calibrate:** in the Camera panel, choose *Calibrate*.
+   - **Find board automatically** looks for the chequerboard itself. It works
+     best on an empty board (the pieces hide some square corners); with the
+     pieces set up it usually works too, unless the board is small in the picture.
+   - Or click the outer corners of a8, h8, h1 and a1 roughly (within about a
+     third of a square) and press **Snap to squares** to line them up exactly.
+   - Zoom in with the slider, drag a corner to move it (a magnifier shows
+     while you drag), or tap one and nudge it with the arrow keys.
+   - The cyan grid should sit on the squares with a1 (shaded) in the right
+     corner; **Rotate labels** turns them a quarter turn if not.
+
+   Then *Save calibration*. Calibration is saved in `data/calibration.json`
+   and kept between runs; opening *Calibrate* again shows the saved corners
+   so you can fine-tune them. Redo it if the camera moves.
 6. Set up the pieces, pick your colour and the computer's skill, and press
    **Start new game**.
 
@@ -107,6 +122,8 @@ pip install chess numpy opencv-python-headless
 cd python
 python3 test_detector.py          # move detector, 604 simulated moves
 python3 test_game.py              # whole game loop against real Stockfish
+python3 test_autocal.py           # automatic calibration
+python3 test_still.py             # stillness check with a noisy, flickering camera
 ```
 
 ## Tuning
@@ -114,8 +131,9 @@ python3 test_game.py              # whole game loop against real Stockfish
 If moves are missed, raise the light level or lower the change threshold;
 if the wrong move is read, raise the minimum fit. Both are under *Tuning*
 in the New game panel and apply from the next game. If
-the app never says "Board ready", the camera is noisier than the stillness
-check allows (`motion_threshold` in `vision.py`, default 4).
+the app never says "Board ready", something in view keeps changing part of
+the board (a shadow, a flickering light on one side): raise `motion_threshold`
+in `vision.py` (default 8; a hand over the board measures 20 or more).
 
 ## 3D-printable pieces that read well from above
 
