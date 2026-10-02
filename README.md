@@ -10,8 +10,9 @@ using Stockfish. You control it from a web page on your phone or computer.
 Stockfish is a free, open-source chess engine: a program that, given a chess
 position, works out a good move. It is one of the strongest chess programs in
 the world, but it has a "Skill Level" setting (0 to 20) so it can play like a
-beginner too. In this app it runs in its own container on the UNO Q (the
-`stockfish` brick, see below). This app uses it for two things: choosing the computer's moves,
+beginner too. App Lab apps can't `apt install` anything, so the app
+downloads Debian's Stockfish package itself on the first game and keeps the
+engine in `data/stockfish`. This app uses it for two things: choosing the computer's moves,
 and giving you hints if you ask for them.
 
 ## How it works
@@ -39,15 +40,14 @@ ordinary pieces work. Special printed pieces just make it more reliable.
 ## Repository layout
 
 The repository is an App Lab app: `app.yaml`, `python/`, `assets/`,
-`sketch/` and `bricks/` are what App Lab uses. The rest is printable stuff.
+and `sketch/` are what App Lab uses. The rest is printable stuff.
 
 | Path | What's in it |
 |---|---|
-| `app.yaml` | App manifest: name, icon, and the bricks it uses (`arduino:web_ui`, `stockfish`) |
+| `app.yaml` | App manifest: name, icon, and the bricks it uses (`arduino:web_ui`) |
 | `python/` | The app that runs on the UNO Q's Linux side (see Files below) |
 | `assets/` | The web page (served by the Web UI brick on port 7000) |
 | `sketch/` | Microcontroller sketch: draws the computer's move on the LED matrix |
-| `bricks/stockfish/` | Custom brick: a Debian container that installs Stockfish and serves it on TCP port 4000 |
 | [`board/`](board/) | Printable board PDFs (A4 and Letter, 50 mm squares) and `make_board.py` to regenerate them |
 | `chess_board_pdf.*` | Kev's own board design (OmniGraffle source and PDF) |
 | [`pieces/`](pieces/README.md) | Low, wide 3D-printable pieces with symbols on top: OpenSCAD source and STLs |
@@ -61,7 +61,8 @@ The repository is an App Lab app: `app.yaml`, `python/`, `assets/`,
 | `game.py` | The game loop (runs in its own thread) |
 | `vision.py` | Board straightening, per-square change scores, waiting for stillness |
 | `detector.py` | Picks the legal move that matches the changed squares |
-| `engine.py` | Talks UCI to Stockfish (the brick over TCP, or a local install) |
+| `engine.py` | Talks UCI to Stockfish |
+| `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
 | `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
@@ -73,9 +74,9 @@ The repository is an App Lab app: `app.yaml`, `python/`, `assets/`,
    (or create a new app in App Lab and copy these folders into it).
 2. Plug the USB webcam into the UNO Q (through a USB-C hub). Mount it as
    directly above the board as you can, with even light and no strong shadows.
-3. Open the app in App Lab and press **Run**. The first run needs internet:
-   the `stockfish` brick downloads Stockfish into its container. The page
-   says "Waiting for Stockfish to start" until it's ready.
+3. Open the app in App Lab and press **Run**. The first game needs internet:
+   the app downloads Stockfish (about 30 MB) into `data/`. The page says
+   "Downloading Stockfish" until it's ready.
 4. Open `http://<UNO-Q-IP>:7000` on your phone or computer.
 5. **Calibrate:** in the Camera panel, choose *Calibrate* and click the outer
    corners of a8, h8, h1 and a1 in that order, then *Save calibration*. The
@@ -140,9 +141,10 @@ Ready-to-print files and a print guide are in [`pieces/`](pieces/README.md). The
 - The move detector passes the offline test (604 moves from simulated,
   angled, noisy camera images, including castling, en passant, captures and
   promotion), and the game loop passes `test_game.py` against a real
-  Stockfish, both run directly and over TCP the way the brick serves it.
+  Stockfish, run directly and over TCP. `stockfish_install.py` was checked by
+  downloading and running Stockfish from a package mirror as a normal user.
 - **Not yet tried on a real UNO Q with a real camera**, so the App Lab parts
-  (camera, Web UI, Stockfish brick, LED matrix) are untested on hardware.
+  (camera, Web UI, Stockfish download, LED matrix) are untested on hardware.
   Expect to tune the thresholds for your lighting.
 - Ideas: auto-detect the board corners, choose under-promotion pieces, and
   save games as PGN files.
