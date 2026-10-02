@@ -81,6 +81,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `vision.py` | Board straightening, per-square change scores, waiting for stillness |
 | `detector.py` | Picks the legal move that matches the changed squares |
 | `engine.py` | Talks UCI to Stockfish |
+| `speech.py` | Speaks messages on the board's speaker (espeak-ng, sent to the board's sound server) |
 | `stockfish_install.py` | Downloads the Stockfish binary from the Debian mirror on the first run (no apt or root needed) |
 | `announce.py` | Describes moves in words, draws the arrow on the board image |
 | `explain.py` | Tutor: says why a move is good or bad (hanging pieces, mates, forks, pins, missed captures) and grades it with Stockfish |
@@ -132,6 +133,60 @@ The LED matrix shows the computer's last move from White's side: the left
 8x8 columns are the board (a-h left to right, rank 8 at the top), the
 from-square dim and the to-square bright.
 
+## Talking through a speaker on the board
+
+The UNO Q doesn't play sound over HDMI, but the app can talk through a
+Bluetooth speaker (or a USB speaker on the hub). The speech is made inside
+the app by espeak-ng, which comes as a pip package (`espeakng-loader`), so
+nothing is apt-installed. App Lab's container can't reach the board's
+sound system directly, so the app sends the audio to the board's sound
+server (PipeWire or PulseAudio, which is where a Bluetooth speaker plays)
+over its "simple protocol" TCP port, 4712. That port needs turning on once.
+
+On the UNO Q (a terminal, or `ssh arduino@<UNO-Q-IP>`), first check the
+speaker plays:
+
+```bash
+bluetoothctl devices Connected    # the speaker should be listed
+pactl list short sinks            # it shows as bluez_output....
+pactl set-default-sink <the bluez_output name>
+paplay /usr/share/sounds/alsa/Front_Center.wav    # you should hear "front centre"
+```
+
+If `pactl` isn't found, or no `bluez_output` sink appears, install the
+sound server with Bluetooth support and reconnect the speaker:
+
+```bash
+sudo apt install pipewire-pulse wireplumber libspa-0.2-bluetooth pulseaudio-utils
+systemctl --user enable --now pipewire pipewire-pulse wireplumber
+bluetoothctl connect <speaker MAC>
+```
+
+Then open the port the app talks to, and keep it open after a reboot:
+
+```bash
+mkdir -p ~/.config/pipewire/pipewire-pulse.conf.d
+cat > ~/.config/pipewire/pipewire-pulse.conf.d/chess-speaker.conf <<'CONF'
+pulse.cmd = [
+  { cmd = "load-module" args = "module-simple-protocol-tcp rate=22050 format=s16le channels=1 playback=true record=false port=4712 listen=0.0.0.0" flags = [ "nofail" ] }
+]
+CONF
+systemctl --user restart pipewire-pulse
+sudo loginctl enable-linger arduino     # sound server runs even when nobody is logged in
+```
+
+(To try it without saving anything: `pactl load-module module-simple-protocol-tcp
+rate=22050 format=s16le channels=1 playback=true record=false port=4712 listen=0.0.0.0`.)
+Anything on your network can play sound through that port, so close it
+(`rm` the file and restart pipewire-pulse) if that matters to you.
+
+*Speak through the board's speaker* on the page is on by default. While
+the board can't speak (the port isn't open, or the speaker is off) the page
+says so and reads messages aloud itself, if *Read messages aloud* is ticked.
+The voice is espeak-ng's British English; `SPEAKER_VOICE`, `SPEAKER_SPEED`
+(words per minute), `SPEAKER_HOST` and `SPEAKER_PORT` environment variables
+change it.
+
 ## Testing without the hardware
 
 On any computer with Python 3:
@@ -149,6 +204,7 @@ python3 test_occupancy.py         # spotting missing and unexpected pieces
 python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
 python3 test_realign.py           # the grid following the board when it's nudged
 python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
+python3 test_speech.py            # speaking on the board's speaker (pip install espeakng-loader)
 ```
 
 ## Tuning
