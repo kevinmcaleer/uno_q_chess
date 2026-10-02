@@ -4,4 +4,3 @@ description: Play Stockfish on a real chess board. A USB webcam watches the boar
 
 bricks:
   - arduino:web_ui
-  - stockfish

@@ -150,7 +150,7 @@ class Game:
         self.engine = self.make_engine(
             s["skill"], s["think"],
             on_wait=lambda: self._set_status(
-                "Waiting for Stockfish to start (the first start downloads it)..."))
+                "Downloading Stockfish (first game only, needs internet)..."))
 
         self.say("Set up the starting position and take your hands away.")
         self._set_status("Waiting for the board to settle.")

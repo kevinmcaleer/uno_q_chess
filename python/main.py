@@ -17,8 +17,9 @@ from arduino.app_bricks.web_ui import WebUI
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App, Bridge, Frame, Logger
 
-from engine import Engine
+from engine import Engine, find_local
 from game import Game
+import stockfish_install
 from vision import BoardCamera, load_calibration, save_calibration
 
 DATA_DIR = "/app/data" if os.path.isdir("/app") else os.path.join(os.path.dirname(__file__), "..", "data")
@@ -65,7 +66,14 @@ def show_move(move):
 
 
 def make_engine(skill, think, on_wait=None):
-    return Engine(skill=skill, think_time=think, on_wait=on_wait)
+    """Stockfish can't be apt-installed in App Lab's container, so the first
+    game downloads it into data/ (needs internet once)."""
+    path = find_local()
+    if not path:
+        if on_wait and not os.path.exists(os.path.join(DATA_DIR, "stockfish")):
+            on_wait()
+        path = stockfish_install.install(DATA_DIR)
+    return Engine(skill=skill, think_time=think, path=path)
 
 
 game = Game(cam, make_engine, say, send_state, show_move)
