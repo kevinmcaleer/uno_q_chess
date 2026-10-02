@@ -1,22 +1,23 @@
 # Chess camera for the Arduino UNO Q
 
-A USB webcam looks down on a real chess board. The UNO Q's Linux side watches
-the board, works out each move, keeps track of the game, and plays against you
-using Stockfish.
+An [Arduino App Lab](https://docs.arduino.cc/software/app-lab/) app. A USB
+webcam looks down on a real chess board. The UNO Q's Linux side watches the
+board, works out each move, keeps track of the game, and plays against you
+using Stockfish. You control it from a web page on your phone or computer.
 
 ## What is Stockfish?
 
 Stockfish is a free, open-source chess engine: a program that, given a chess
 position, works out a good move. It is one of the strongest chess programs in
 the world, but it has a "Skill Level" setting (0 to 20) so it can play like a
-beginner too. It runs happily on the UNO Q's Linux side (`apt install
-stockfish`). This app uses it for two things: choosing the computer's moves,
+beginner too. In this app it runs in its own container on the UNO Q (the
+`stockfish` brick, see below). This app uses it for two things: choosing the computer's moves,
 and giving you hints if you ask for them.
 
 ## How it works
 
-1. **Calibration (once).** You mark the four corners of the board in the
-   camera image. The app uses that to "straighten" every frame into a
+1. **Calibration (once).** On the web page you click the four corners of
+   the board in a camera snapshot. The app uses that to "straighten" every frame into a
    top-down 8x8 grid, so it knows which pixels belong to which square.
 2. **Waiting for stillness.** The app waits until the image stops changing
    (your hand has left the board) before it looks at anything.
@@ -27,60 +28,93 @@ and giving you hints if you ask for them.
    python-chess for every legal move and picks the one whose squares
    changed while the rest of the board stayed quiet. Castling (4 squares),
    en passant and promotion (assumed queen) are handled.
-5. **Computer's turn.** Stockfish picks a move. The app says it out loud (if
-   `espeak-ng` is installed), prints it, and saves `last_move.png` with an
-   arrow on the board. You make the move for it; the app checks you moved
-   the right piece and asks you to fix it if not.
+5. **Computer's turn.** Stockfish picks a move. The web page shows it
+   (and reads it aloud if you like), the LED matrix lights its from and to
+   squares, and you make the move for it; the app checks you moved the
+   right piece and asks you to fix it if not.
 
 Because of step 4, the app never needs to recognise *what* a piece is, so
 ordinary pieces work. Special printed pieces just make it more reliable.
 
 ## Repository layout
 
-| Folder | What's in it |
+The repository is an App Lab app: `app.yaml`, `python/`, `assets/`,
+`sketch/` and `bricks/` are what App Lab uses. The rest is printable stuff.
+
+| Path | What's in it |
 |---|---|
-| `/` (top level) | The Python app that runs on the UNO Q (see Files below) |
+| `app.yaml` | App manifest: name, icon, and the bricks it uses (`arduino:web_ui`, `stockfish`) |
+| `python/` | The app that runs on the UNO Q's Linux side (see Files below) |
+| `assets/` | The web page (served by the Web UI brick on port 7000) |
+| `sketch/` | Microcontroller sketch: draws the computer's move on the LED matrix |
+| `bricks/stockfish/` | Custom brick: a Debian container that installs Stockfish and serves it on TCP port 4000 |
 | [`board/`](board/) | Printable board PDFs (A4 and Letter, 50 mm squares) and `make_board.py` to regenerate them |
-| `chess_board_pdf.*` (top level) | Kev's own board design (OmniGraffle source and PDF) |
+| `chess_board_pdf.*` | Kev's own board design (OmniGraffle source and PDF) |
 | [`pieces/`](pieces/README.md) | Low, wide 3D-printable pieces with symbols on top: OpenSCAD source and STLs |
 | [`coins/`](coins/README.md) | Flat 15 mm coins for small boards (squares under 20 mm), with PrusaSlicer MMU3 project files |
 
-## Files
+## Files in `python/`
 
 | File | What it does |
 |---|---|
-| `calibrate.py` | Mark the board corners, writes `calibration.json` |
-| `vision.py` | Camera, board straightening, per-square change scores |
+| `main.py` | App Lab entry point: camera, web page messages and images, LED matrix |
+| `game.py` | The game loop (runs in its own thread) |
+| `vision.py` | Board straightening, per-square change scores, waiting for stillness |
 | `detector.py` | Picks the legal move that matches the changed squares |
-| `engine.py` | Stockfish wrapper (play a move, give a hint) |
-| `announce.py` | Describes moves in words, speaks them, draws the arrow |
-| `main.py` | The game loop |
+| `engine.py` | Talks UCI to Stockfish (the brick over TCP, or a local install) |
+| `announce.py` | Describes moves in words, draws the arrow on the board image |
 | `test_detector.py` | Offline test: fake camera images of 600+ moves |
+| `test_game.py` | Offline test of the whole game loop with a fake camera and real Stockfish |
 
-## Setup on the UNO Q
+## Running it on the UNO Q
 
-Connect the webcam (and a keyboard/screen if you want the click-to-calibrate
-window) through a USB-C hub. Then on the UNO Q:
+1. Copy this repository into App Lab's apps folder on the UNO Q, e.g.
+   `git clone https://github.com/kevinmcaleer/uno_q_chess ~/ArduinoApps/chess-camera`
+   (or create a new app in App Lab and copy these folders into it).
+2. Plug the USB webcam into the UNO Q (through a USB-C hub). Mount it as
+   directly above the board as you can, with even light and no strong shadows.
+3. Open the app in App Lab and press **Run**. The first run needs internet:
+   the `stockfish` brick downloads Stockfish into its container. The page
+   says "Waiting for Stockfish to start" until it's ready.
+4. Open `http://<UNO-Q-IP>:7000` on your phone or computer.
+5. **Calibrate:** in the Camera panel, choose *Calibrate* and click the outer
+   corners of a8, h8, h1 and a1 in that order, then *Save calibration*. The
+   *Straightened board* view should show the grid lined up with the squares,
+   a8 top left. Calibration is saved in `data/calibration.json` and kept
+   between runs; redo it if the camera moves.
+6. Set up the pieces, pick your colour and the computer's skill, and press
+   **Start new game**.
+
+During the game the page shows the position, the move list and what the app
+says (tick *Read messages aloud* to hear it). The computer's move is outlined
+in red on the board and drawn as an arrow on the camera view. *Hint* asks
+Stockfish for a move for you. If a move can't be read, you can type it
+(`e2e4` or `Nf3`) and then make it on the board.
+
+The LED matrix shows the computer's last move from White's side: the left
+8x8 columns are the board (a-h left to right, rank 8 at the top), the
+from-square dim and the to-square bright.
+
+## Testing without the hardware
+
+On any computer with Python 3:
 
 ```bash
-sudo apt install stockfish espeak-ng
-python3 -m venv ~/chess && source ~/chess/bin/activate
-pip install -r requirements.txt     # swap in opencv-python if you want windows
-python3 test_detector.py            # sanity check, no camera needed
+sudo apt install stockfish        # or brew install stockfish
+python3 -m venv .venv && source .venv/bin/activate
+pip install chess numpy opencv-python-headless
+cd python
+python3 test_detector.py          # move detector, 604 simulated moves
+python3 test_game.py              # whole game loop against real Stockfish
 ```
 
-Mount the camera as directly above the board as you can, with even light and
-no strong shadows. Then:
+## Tuning
 
-```bash
-python3 calibrate.py                # or --snapshot / --corners when headless
-python3 main.py                     # you play white
-python3 main.py --colour black --skill 3 --hints
-```
-
-If moves are missed, raise the light level or lower `--change-threshold`.
-If the wrong move is read, raise `--min-fit`. After three misses the app
-lets you type the move (e.g. `e2e4`) so the game can carry on.
+If moves are missed, raise the light level or lower the change threshold;
+if the wrong move is read, raise the minimum fit. Both are under *Tuning*
+in the New game panel and apply from the next game. If
+the app never says "Board ready", the camera is noisier than the stillness
+check allows (`motion_threshold` in `vision.py`, default 4).
 
 ## 3D-printable pieces that read well from above
 
@@ -105,9 +139,10 @@ Ready-to-print files and a print guide are in [`pieces/`](pieces/README.md). The
 
 - The move detector passes the offline test (604 moves from simulated,
   angled, noisy camera images, including castling, en passant, captures and
-  promotion). The Stockfish wrapper was checked against a real Stockfish.
-- **Not yet tried on a real UNO Q with a real camera.** Expect to tune the
-  two thresholds for your lighting.
-- Ideas: show the computer's move on the UNO Q's LED matrix or a small web
-  page, auto-detect the board corners, choose under-promotion pieces, and
+  promotion), and the game loop passes `test_game.py` against a real
+  Stockfish, both run directly and over TCP the way the brick serves it.
+- **Not yet tried on a real UNO Q with a real camera**, so the App Lab parts
+  (camera, Web UI, Stockfish brick, LED matrix) are untested on hardware.
+  Expect to tune the thresholds for your lighting.
+- Ideas: auto-detect the board corners, choose under-promotion pieces, and
   save games as PGN files.

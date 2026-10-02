@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chess Camera</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>♟️ Chess Camera</h1>
+      <span id="connection" class="pill off">offline</span>
+    </header>
+
+    <main>
+      <section class="card" id="game">
+        <p id="status">Connecting...</p>
+        <div id="board" aria-label="chess board"></div>
+        <div class="row">
+          <button id="hint">Hint</button>
+          <form id="type-move">
+            <input id="move" placeholder="Type a move, e.g. e2e4" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+        <ol id="moves"></ol>
+      </section>
+
+      <section class="card">
+        <h2>New game</h2>
+        <form id="new-game">
+          <label>You play
+            <select name="colour"><option value="white">White</option><option value="black">Black</option></select>
+          </label>
+          <label>Computer skill <output id="skill-out">5</output>
+            <input type="range" name="skill" min="0" max="20" value="5" />
+          </label>
+          <label class="check"><input type="checkbox" name="hints" /> Suggest a move every turn</label>
+          <details>
+            <summary>Tuning</summary>
+            <label>Change threshold (lower if moves are missed)
+              <input type="number" name="change_threshold" value="25" min="1" step="1" />
+            </label>
+            <label>Minimum fit (raise if the wrong move is read)
+              <input type="number" name="min_fit" value="10" min="0" step="1" />
+            </label>
+          </details>
+          <button type="submit" class="primary">Start new game</button>
+        </form>
+        <label class="check"><input type="checkbox" id="speak" checked /> Read messages aloud</label>
+        <ul id="log"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Camera</h2>
+        <div class="tabs">
+          <button data-view="board" class="active">Straightened board</button>
+          <button data-view="live">Live camera</button>
+          <button data-view="calibrate">Calibrate</button>
+        </div>
+        <div id="view-board" class="view"><img id="board-img" alt="straightened board" /></div>
+        <div id="view-live" class="view hidden"><img id="live-img" alt="live camera" /></div>
+        <div id="view-calibrate" class="view hidden">
+          <p id="calib-hint">Click the outer corner of <b>a8</b>.</p>
+          <div class="calib-wrap">
+            <img id="snap" alt="camera snapshot" />
+            <svg id="calib-marks"></svg>
+          </div>
+          <div class="row">
+            <button id="calib-reset">Start again</button>
+            <button id="calib-refresh">New snapshot</button>
+            <button id="calib-save" class="primary" disabled>Save calibration</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="libs/socket.io.min.js"></script>
+    <script src="libs/arduino.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

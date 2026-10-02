@@ -1,0 +1,19 @@
+services:
+  stockfish:
+    image: debian:trixie-slim
+    # Installs Stockfish the first time the container starts (needs internet),
+    # then serves it over TCP: every connection gets its own Stockfish process.
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -x /usr/games/stockfish ] || ! command -v socat >/dev/null; then
+          apt-get update && apt-get install -y --no-install-recommends stockfish socat
+        fi
+        exec socat TCP-LISTEN:4000,reuseaddr,fork EXEC:/usr/games/stockfish
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -x /usr/games/stockfish && command -v socat"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
