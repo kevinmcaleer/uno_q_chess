@@ -104,6 +104,7 @@ $('#new-game').addEventListener('submit', (e) => {
     colour: f.get('colour'),
     skill: Number(f.get('skill')),
     hints: f.get('hints') === 'on',
+    coach: f.get('coach') === 'on',
     change_threshold: Number(f.get('change_threshold')),
     min_fit: Number(f.get('min_fit')),
   });
