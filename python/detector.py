@@ -20,6 +20,9 @@ def squares_touched(board, move):
     return touched
 
 
+_NEIGHBOURS = [[n for n in chess.SQUARES if chess.square_distance(s, n) == 1] for s in chess.SQUARES]
+
+
 def occupancy_change(board, move):
     """(squares that gain a piece, squares that lose one) when `move` is played."""
     before = set(board.piece_map())
@@ -43,7 +46,11 @@ def infer_move(board, scores, min_fit=10.0, occupancy=None):
     and a piece that was knocked but is still on its square doesn't
     count against the fit, so a nudged neighbour doesn't spoil the reading.
     If no move agrees with the occupancy, the plain fit decides among the
-    moves whose emptied squares look empty."""
+    moves whose emptied squares look empty.
+
+    A tall piece seen from the side covers part of the square behind it, so
+    moving it also changes that square a little: squares next to the move
+    count only half against it."""
     candidates = []
     for move in board.legal_moves:
         if move.promotion not in (None, chess.QUEEN):
@@ -52,8 +59,9 @@ def infer_move(board, scores, min_fit=10.0, occupancy=None):
 
     def fit(touched, ignore=frozenset()):
         inside = min(scores[s] for s in touched)
-        outside = max((scores[s] for s in range(64) if s not in touched and s not in ignore),
-                      default=0.0)
+        near = {n for t in touched for n in _NEIGHBOURS[t]}
+        outside = max((scores[s] * (0.5 if s in near else 1.0)
+                       for s in range(64) if s not in touched and s not in ignore), default=0.0)
         return inside - outside
 
     if occupancy is not None:
@@ -77,13 +85,18 @@ def infer_move(board, scores, min_fit=10.0, occupancy=None):
         # move is worse than asking the player to tidy up.
         candidates = [(m, t) for m, t in candidates if occupancy_change(board, m)[1] <= missing]
 
+    best, best_fit = _best(candidates, fit)
+    if best is None or best_fit < min_fit:
+        return None, best_fit
+    return best, best_fit
+
+
+def _best(candidates, fit):
     best, best_fit = None, float("-inf")
     for move, touched in candidates:
         f = fit(touched)
         if f > best_fit:
             best, best_fit = move, f
-    if best is None or best_fit < min_fit:
-        return None, best_fit
     return best, best_fit
 
 

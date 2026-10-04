@@ -94,6 +94,7 @@ and `sketch/` are what App Lab uses. The rest is printable stuff.
 | `test_occupancy.py` | Offline test of spotting missing and unexpected pieces |
 | `test_nudge.py` | Offline test of reading moves when a neighbouring piece gets knocked |
 | `test_realign.py` | Offline test of the grid following the board when it's nudged mid-game |
+| `test_real_board.py` | Offline test with tall wooden pieces on a black and cream board, uneven light and glare |
 | `test_lessons.py` | Offline test that every lesson step can be completed and wrong moves get sensible answers |
 | `test_lesson_board.py` | Offline test of lessons on the real board with a fake camera |
 | `test_explain.py` | Offline test of the move explanations on classic positions |
@@ -224,6 +225,7 @@ python3 test_still.py             # stillness check with a noisy, flickering cam
 python3 test_occupancy.py         # spotting missing and unexpected pieces
 python3 test_nudge.py             # reading moves when a neighbouring piece gets knocked
 python3 test_realign.py           # the grid following the board when it's nudged
+python3 test_real_board.py        # tall wooden pieces, uneven light and glare
 python3 test_explain.py           # tutor explanations (hanging pieces, forks, mates...)
 python3 test_lessons.py           # every lesson can be completed
 python3 test_lesson_board.py      # lessons on the board with a fake camera
@@ -232,12 +234,26 @@ python3 test_speech.py            # speaking on the board's speaker (pip install
 
 ## Tuning
 
-If moves are missed, raise the light level or lower the change threshold;
-if the wrong move is read, raise the minimum fit. Both are under *Tuning*
-in the New game panel and apply from the next game. If
-the app never says "Board ready", something in view keeps changing part of
-the board (a shadow, a flickering light on one side): raise `motion_threshold`
-in `vision.py` (default 8; a hand over the board measures 20 or more).
+Open *Tuning* under the *Straightened board* view. The sliders apply
+straight away and are saved (in `data/tuning.json`):
+
+- **Change needed for a move** (default 25): lower it if moves are missed,
+  raise it if shadows or a hand get read as moves.
+- **How clearly the move must stand out** (default 10): raise it if the
+  wrong move is read.
+- **Stillness** (default 8): raise it if the app keeps "waiting for the
+  board to settle" (a hand over the board measures 20 or more).
+- **"?" marks** (default 8): raise it if empty squares get marks, for
+  example with tall pieces leaning over the square behind them.
+
+Tick *Show how much each square has changed* to see a number on every
+square: the change since the last move read (or, outside a game, since you
+ticked it), with the squares above the move threshold in red. Make a move
+and set the threshold below the numbers on its squares and above the rest.
+
+The "?" check and the move reader allow for light that is brighter on one
+side of the board, and for glare. A camera close to overhead works best
+with tall pieces.
 
 ## 3D-printable pieces that read well from above
 

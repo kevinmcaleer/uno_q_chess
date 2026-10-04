@@ -66,15 +66,6 @@
           </label>
           <label class="check"><input type="checkbox" name="hints" /> Suggest a move every turn</label>
           <label class="check"><input type="checkbox" name="coach" checked /> Coach me: say why moves are good or bad</label>
-          <details>
-            <summary>Tuning</summary>
-            <label>Change threshold (lower if moves are missed)
-              <input type="number" name="change_threshold" value="25" min="1" step="1" />
-            </label>
-            <label>Minimum fit (raise if the wrong move is read)
-              <input type="number" name="min_fit" value="10" min="0" step="1" />
-            </label>
-          </details>
           <button type="submit" class="primary">Start new game</button>
         </form>
         <label class="check"><input type="checkbox" id="speak" checked /> Read messages aloud</label>
@@ -98,6 +89,28 @@
           </div>
           <label class="check"><input type="checkbox" id="show-pieces" checked /> Show the pieces the app is tracking</label>
           <p id="occupancy-note" class="small"></p>
+          <details id="tuning">
+            <summary>Tuning: dial the camera in for your board</summary>
+            <label class="check"><input type="checkbox" id="show-changes" /> Show how much each square has changed since the last move</label>
+            <p id="readout-note" class="small"></p>
+            <label>Change needed for a move <output id="out-change_threshold"></output>
+              <input type="range" data-tune="change_threshold" min="5" max="60" step="1" />
+              <span class="small">Lower it if your moves are missed (a piece's square should show well above this); raise it if shadows or a hand get read as moves.</span>
+            </label>
+            <label>How clearly the move must stand out <output id="out-min_fit"></output>
+              <input type="range" data-tune="min_fit" min="2" max="40" step="1" />
+              <span class="small">Raise it if the wrong move is read; lower it if moves are missed although their squares changed.</span>
+            </label>
+            <label>Stillness <output id="out-still"></output>
+              <input type="range" data-tune="still" min="2" max="30" step="1" />
+              <span class="small">The board counts as still below this. Raise it if the app keeps "waiting for the board to settle".</span>
+            </label>
+            <label>"?" marks <output id="out-marks"></output>
+              <input type="range" data-tune="marks" min="4" max="40" step="1" />
+              <span class="small">Raise it if empty squares get marks; lower it if missing pieces aren't marked.</span>
+            </label>
+            <button id="tune-reset" type="button">Back to the defaults</button>
+          </details>
         </div>
         <div id="view-live" class="view hidden"><img id="live-img" alt="live camera" /></div>
         <div id="view-calibrate" class="view hidden">
