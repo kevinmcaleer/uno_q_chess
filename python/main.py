@@ -425,11 +425,12 @@ def straightened_jpeg(img):
         p = int(round(i * step))
         cv2.line(top, (p, 0), (p, LIVE_SIZE), (0, 255, 0), 1)
         cv2.line(top, (0, p), (LIVE_SIZE, p), (0, 255, 0), 1)
-    move = game.expected
-    if move:
-        ends = [(int((chess.square_file(sq) + 0.5) * step),
-                 int((7.5 - chess.square_rank(sq)) * step)) for sq in (move.from_square, move.to_square)]
-        cv2.arrowedLine(top, ends[0], ends[1], (0, 0, 255), 8, tipLength=0.25)
+    # the computer's move in red, a hint in blue
+    for move, colour in ((game.expected, (0, 0, 255)), (game.hint, (237, 128, 47))):
+        if move:
+            ends = [(int((chess.square_file(sq) + 0.5) * step),
+                     int((7.5 - chess.square_rank(sq)) * step)) for sq in (move.from_square, move.to_square)]
+            cv2.arrowedLine(top, ends[0], ends[1], colour, 8, tipLength=0.25)
     return jpeg(top, 75)
 
 

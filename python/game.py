@@ -45,6 +45,7 @@ class Game:
         self.settings = None
         self.status = "Calibrate the board, then start a new game."
         self.expected = None                # computer's move the human must make for it
+        self.hint = None                    # move suggested to the human this turn
         self.board_image = None             # straightened board for the web page
         self._new_game = queue.Queue(maxsize=1)
         self._typed = queue.Queue()
@@ -114,6 +115,7 @@ class Game:
             "turn": "white" if self.board.turn == chess.WHITE else "black",
             "last_move": last,
             "expected": self.expected.uci() if self.expected else None,
+            "hint": self.hint.uci() if self.hint else None,
             "moves": self._san_moves(),
             "calibrated": self.cam.H is not None,
         }
@@ -135,6 +137,7 @@ class Game:
                 if "idle" in settings:
                     self.settings = None
                     self.expected = None
+                    self.hint = None
                     self._set_status(settings["idle"])
                 elif "lesson" in settings:
                     self._lesson(settings)
@@ -162,7 +165,7 @@ class Game:
         if self._hint.is_set():
             self._hint.clear()
             if self.engine and self.board.turn == self.human and not self.board.is_game_over():
-                self.say("Hint: " + describe(self.board, self.engine.suggest(self.board)))
+                self._give_hint()
         try:
             text = self._typed.get_nowait()
         except queue.Empty:
@@ -174,6 +177,12 @@ class Game:
                 raise TypedMove(self.board.parse_san(text))
             except ValueError:
                 self.say(f"{text} isn't a legal move here.")
+
+    def _give_hint(self):
+        """Say the engine's suggestion and show it on the page until a move is made."""
+        self.hint = self.engine.suggest(self.board)
+        self.say("Hint: " + describe(self.board, self.hint))
+        self.on_update(self.state())
 
     def _check_new_game_only(self):
         try:
@@ -194,6 +203,7 @@ class Game:
         self.human = chess.WHITE if s["colour"] == "white" else chess.BLACK
         self.board = chess.Board()
         self.expected = None
+        self.hint = None
         self._mentioned = set()
         self.show_move(None)
         if self.cam.H is None:
@@ -218,11 +228,12 @@ class Game:
         while not self.board.is_game_over():
             if self.board.turn == self.human:
                 if s["hints"]:
-                    self.say("Hint: " + describe(self.board, self.engine.suggest(self.board)))
+                    self._give_hint()
                 self._set_status("Your move.")
                 self.say("Your move.")
                 move, reference = self._read_move(reference)
                 self.say("You played " + describe(self.board, move))
+                self.hint = None
                 if s.get("coach"):
                     self._coach(move)
                 self.board.push(move)
