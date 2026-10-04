@@ -13,6 +13,14 @@ from explain import coach, reasons_for
 from vision import change_scores, draw_grid, occupancy_mismatches, warp
 
 
+TUNING_DEFAULTS = {
+    "change_threshold": 25.0,   # how much a square must change to count as part of a move
+    "min_fit": 10.0,            # how clearly the best move must stand out
+    "still": 8.0,               # how little the board may move to count as still
+    "marks": 8.0,               # how much a square must stand out to get a "?" mark
+}
+
+
 class NewGame(Exception):
     """Raised inside the loop to drop the current game and start another."""
 
@@ -45,25 +53,35 @@ class Game:
         self.engine = None
         self.human = chess.WHITE
         self._mentioned = set()             # knocked pieces already mentioned
+        # Tuning, adjustable live from the web page (sliders); see set_tuning
+        self.tuning = dict(TUNING_DEFAULTS)
+        self.reference = None               # last settled board image, for the live readout
 
     # ---- requests from the web page -------------------------------------
 
+    def set_tuning(self, **values):
+        """Change tuning values (any of TUNING_DEFAULTS); used from the next frame."""
+        for k, v in values.items():
+            if k in TUNING_DEFAULTS and v is not None:
+                self.tuning[k] = float(v)
+        self.cam.motion_threshold = self.tuning["still"]
+
     def request_new_game(self, colour="white", skill=5, hints=False, think=0.5,
-                         change_threshold=25.0, min_fit=10.0, coach=False):
+                         change_threshold=None, min_fit=None, coach=False):
+        self.set_tuning(change_threshold=change_threshold, min_fit=min_fit)
         settings = dict(colour=colour, skill=int(skill), hints=bool(hints), think=float(think),
-                        coach=bool(coach),
-                        change_threshold=float(change_threshold), min_fit=float(min_fit))
+                        coach=bool(coach))
         try:
             self._new_game.get_nowait()
         except queue.Empty:
             pass
         self._new_game.put(settings)
 
-    def request_lesson(self, board, on_move, change_threshold=25.0, min_fit=10.0):
+    def request_lesson(self, board, on_move, change_threshold=None, min_fit=None):
         """Watch the real board for a lesson move from `board`. on_move(move)
         is called with each move read and returns True if it was right."""
-        self._replace(dict(lesson=board.copy(stack=False), on_move=on_move,
-                           change_threshold=float(change_threshold), min_fit=float(min_fit)))
+        self.set_tuning(change_threshold=change_threshold, min_fit=min_fit)
+        self._replace(dict(lesson=board.copy(stack=False), on_move=on_move))
 
     def request_idle(self, status="Lesson: read the page, then press Next."):
         """Stop watching the board (e.g. a lesson step with nothing to play)."""
@@ -268,7 +286,7 @@ class Game:
         """Wait until the camera sees pieces where the lesson needs them (or
         the page says it's set up). Returns the settled board image."""
         said = None
-        thr = self.settings["change_threshold"]
+        thr = self.tuning["change_threshold"]
 
         def check():
             self._check_new_game_only()
@@ -314,7 +332,7 @@ class Game:
     def _wait_for_undo(self, reference, wrong):
         """After a wrong lesson move, wait until the board changes again: back
         to how it was, or (the next read will tell) another move."""
-        thr = self.settings["change_threshold"]
+        thr = self.tuning["change_threshold"]
         self.cam.wait_for_board_change(wrong, thr, self._check_new_game_only)
 
     def _coach(self, move):
@@ -331,22 +349,25 @@ class Game:
 
     def _read_move(self, reference):
         """Wait for the board to change and settle, then work out the move.
-        Returns (move, settled_image). A move typed on the web page also counts."""
-        s = self.settings
+        Returns (move, settled_image). A move typed on the web page also counts.
+        The same unreadable change isn't complained about twice."""
+        t = self.tuning
+        self.reference = reference
         misses = 0
+        last_miss = None
         while True:
             try:
-                settled = self.cam.wait_for_board_change(reference, s["change_threshold"], self._check)
-            except TypedMove as t:
-                return t.move, self.cam.wait_until_still(self._check_new_game_only)
+                settled = self.cam.wait_for_board_change(reference, t["change_threshold"], self._check)
+            except TypedMove as tm:
+                return tm.move, self.cam.wait_until_still(self._check_new_game_only)
             scores = change_scores(reference, settled)
             pieces = {sq: p.color for sq, p in self.board.piece_map().items()}
-            extra, missing = occupancy_mismatches(settled, pieces)
-            move, fit = infer_move(self.board, scores, s["min_fit"], (extra, missing))
+            extra, missing = occupancy_mismatches(settled, pieces, t["marks"])
+            move, fit = infer_move(self.board, scores, t["min_fit"], (extra, missing))
             if move:
                 touched = squares_touched(self.board, move)
                 self._mentioned -= touched              # a piece moved there now: start afresh
-                knocked = knocked_pieces(self.board, move, scores, missing, s["change_threshold"])
+                knocked = knocked_pieces(self.board, move, scores, missing, t["change_threshold"])
                 if knocked is None:
                     # most pieces changed: the board slid, so line the grid up
                     # again (quietly unless it actually moves)
@@ -359,12 +380,17 @@ class Game:
                     names = " and ".join(chess.square_name(sq) for sq in new)
                     self.say(f"The piece on {names} looks knocked. Centre it when you can.")
                 return move, settled
+            changed = frozenset(sq for sq in range(64) if scores[sq] > t["change_threshold"])
+            if changed == last_miss:
+                continue                                # same as last time: already said
+            last_miss = changed
             misses += 1
-            odd = sorted(set(extra) | set(missing))
-            where = (" Have a look at " + ", ".join(chess.square_name(sq) for sq in odd) + "."
-                     if odd else "")
+            if len(changed) > 8:
+                self.say("Lots of the board changed. Is a hand or something else over it?")
+                continue
+            names = ", ".join(chess.square_name(sq) for sq in sorted(changed))
             self.say("I couldn't read that move. Please check the pieces are centred on their "
-                     "squares." + where)
+                     "squares." + (f" I saw changes on {names}." if names else ""))
             if misses >= 3:
                 self.say("You can also type the move on the web page, for example e2e4.")
                 misses = 0

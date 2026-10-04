@@ -109,8 +109,6 @@ $('#new-game').addEventListener('submit', (e) => {
     skill: Number(f.get('skill')),
     hints: f.get('hints') === 'on',
     coach: f.get('coach') === 'on',
-    change_threshold: Number(f.get('change_threshold')),
-    min_fit: Number(f.get('min_fit')),
   });
 });
 $('#new-game [name=skill]').addEventListener('input', (e) => { $('#skill-out').textContent = e.target.value; });
@@ -169,6 +167,18 @@ function drawOverlay() {
           `${white ? 'White' : 'Black'} ${NAMES[p.toLowerCase()]} on ${name}`;
     }
   }
+  if (readout && readout.scores) {
+    const thr = tuning.change_threshold || 25;
+    readout.scores.forEach((v, sq) => {
+      const name = 'abcdefgh'[sq % 8] + (Math.floor(sq / 8) + 1);
+      const [x, y] = xy(name);
+      el('text', { x: x + 0.5, y: y + 0.82, class: 'score' + (v > thr ? ' over' : '') }, String(Math.round(v)));
+    });
+  }
+  $('#readout-note').textContent = readout
+    ? `Board movement now: ${readout.motion == null ? '-' : readout.motion.toFixed(1)}` +
+      ` (still below ${Math.round(tuning.still || 8)}). Squares in red changed more than ${Math.round(tuning.change_threshold || 25)}.`
+    : '';
   for (const [kind, list] of [['missing', occupancy.missing], ['extra', occupancy.extra]]) {
     for (const name of list) {
       const [x, y] = xy(name);
@@ -184,6 +194,41 @@ function drawOverlay() {
 }
 
 $('#show-pieces').addEventListener('change', drawOverlay);
+
+// ---- tuning: sliders apply straight away; the readout shows how much each
+// square has changed since the last settled board, to see where to set them
+
+let tuning = {};
+let readout = null;                       // {scores: [64], motion} while shown
+
+ui.on_message('tuning', (t) => {
+  tuning = t;
+  document.querySelectorAll('[data-tune]').forEach((input) => {
+    const k = input.dataset.tune;
+    if (document.activeElement !== input) input.value = t[k];
+    $('#out-' + k).textContent = Math.round(t[k]);
+  });
+  drawOverlay();
+});
+
+let tuneTimer = null;
+document.querySelectorAll('[data-tune]').forEach((input) => {
+  input.addEventListener('input', () => {
+    $('#out-' + input.dataset.tune).textContent = input.value;
+    clearTimeout(tuneTimer);
+    tuneTimer = setTimeout(() => ui.send_message('tuning', { [input.dataset.tune]: Number(input.value) }), 150);
+  });
+});
+$('#tune-reset').addEventListener('click', () => ui.send_message('tuning', { reset: true }));
+
+ui.on_message('readout', (r) => { readout = $('#show-changes').checked ? r : null; drawOverlay(); });
+function askReadout() { if ($('#show-changes').checked) ui.send_message('readout', {}); }
+$('#show-changes').addEventListener('change', () => {
+  if (!$('#show-changes').checked) readout = null;
+  askReadout();
+  drawOverlay();
+});
+setInterval(askReadout, 5000);            // the app sends it for a while after each ask
 
 document.querySelectorAll('.tabs button').forEach((btn) => {
   btn.addEventListener('click', () => {

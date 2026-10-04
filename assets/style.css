@@ -89,3 +89,7 @@ details label { margin-top: 8px; }
 #lesson-list h3:first-child { margin-top: 0; }
 #lesson-list .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 #lesson-list button.done::before { content: '✓ '; color: #1a7f37; }
+#board-overlay .score { font-size: 0.24px; font-weight: 700; text-anchor: middle; fill: #fff; stroke: #000; stroke-width: 0.03px; paint-order: stroke; }
+#board-overlay .score.over { fill: #ff5a4f; }
+#tuning label { margin-top: 10px; }
+#tuning .small { font-size: 0.8rem; }

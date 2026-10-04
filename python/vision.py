@@ -9,6 +9,7 @@ import numpy as np
 WARP_SIZE = 800                 # warped board is WARP_SIZE x WARP_SIZE pixels
 SQ = WARP_SIZE // 8             # pixels per square
 INNER = 0.6                     # only compare the middle 60% of each square
+STILL_SIZE = 200                # board size for the (frequent) stillness check
 
 
 def load_calibration(path):
@@ -52,27 +53,29 @@ def square_rect(square):
     return x + m, y + m, x + SQ - m, y + SQ - m
 
 
+def _per_square(img):
+    """View of the inner part of every square: (rank 1..8, file a..h, h, w, ...),
+    so rank r, file f is python-chess square r * 8 + f. Works at any image
+    size that's a multiple of 8."""
+    sq = img.shape[0] // 8
+    m = int(sq * (1 - INNER) / 2)
+    grid = img.reshape(8, sq, 8, sq, *img.shape[2:])[::-1]          # row 0 is rank 8
+    return grid[:, m:sq - m, :, m:sq - m].swapaxes(1, 2)
+
+
 def change_scores(before, after):
     """Mean colour difference per square between two warped board images.
     Returns a list of 64 floats indexed by python-chess square number."""
     a = cv2.GaussianBlur(cv2.cvtColor(before, cv2.COLOR_BGR2LAB), (5, 5), 0).astype(np.int16)
     b = cv2.GaussianBlur(cv2.cvtColor(after, cv2.COLOR_BGR2LAB), (5, 5), 0).astype(np.int16)
-    diff = np.abs(a - b).sum(axis=2)
-    scores = []
-    for sq in range(64):
-        x0, y0, x1, y1 = square_rect(sq)
-        scores.append(float(diff[y0:y1, x0:x1].mean()))
-    return scores
+    diff = np.abs(a - b).sum(axis=2).astype(np.float32)
+    return _per_square(diff).mean(axis=(2, 3)).reshape(64).tolist()
 
 
 def square_means(board_img):
     """Average LAB colour of the inner part of each square: 64x3 floats."""
     lab = cv2.cvtColor(board_img, cv2.COLOR_BGR2LAB).astype(np.float32)
-    out = np.empty((64, 3), np.float32)
-    for sq in range(64):
-        x0, y0, x1, y1 = square_rect(sq)
-        out[sq] = lab[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0)
-    return out
+    return _per_square(lab).mean(axis=(2, 3)).reshape(64, 3)
 
 
 def motion(before, after):
@@ -81,7 +84,11 @@ def motion(before, after):
     shares (exposure or white balance, fitted as gain and offset per colour
     channel). Near 0 for a still board, however noisy the camera; a hand or a
     moving piece gives tens."""
-    a, b = square_means(before), square_means(after)
+    return motion_of_means(square_means(before), square_means(after))
+
+
+def motion_of_means(a, b):
+    """motion() from square_means() of the two images."""
     resid = np.empty_like(a)
     for ch in range(3):
         x, y = a[:, ch], b[:, ch]
@@ -96,31 +103,58 @@ def motion(before, after):
     return float(np.abs(resid).sum(axis=1).max())
 
 
-def occupancy_mismatches(board_img, pieces):
+def _smooth_fit(values, known, squares):
+    """Predict values (n x k) on `squares` from those on the `known` squares
+    with a smooth surface across the board (a gentle curve in file and rank),
+    so light that falls off across the board, or glare on one side, is
+    allowed for. Fitted twice, the second time without the squares that fit
+    worst (a piece the game doesn't know about, a shadow)."""
+    def design(sqs):
+        f = np.array([s % 8 for s in sqs], np.float32) / 7 - 0.5
+        r = np.array([s // 8 for s in sqs], np.float32) / 7 - 0.5
+        cols = [np.ones_like(f), f, r]
+        if len(known) >= 10:
+            cols += [f * f, r * r, f * r]
+        return np.stack(cols, axis=1)
+
+    known = list(known)
+    A, y = design(known), values[known]
+    keep = np.ones(len(known), bool)
+    for _ in range(2):
+        coef, *_ = np.linalg.lstsq(A[keep], y[keep], rcond=None)
+        err = np.abs(y - A @ coef).sum(axis=1)
+        if keep.sum() > A.shape[1] + 3:
+            keep = err <= np.quantile(err, 0.8)
+    return design(squares) @ coef
+
+
+def occupancy_mismatches(board_img, pieces, margin=8.0):
     """Squares where the camera disagrees with the tracked position.
 
     pieces: {square: True for a white piece, False for black} that should be
     on the board. Each square is scored by how different it looks from an
     empty square of its colour right now (average colour, and how busy it
-    is). The cut-off between "looks empty" and "looks occupied" sits halfway
+    is), where "an empty square" is fitted across the board from the squares
+    the game says are empty, so uneven light and glare are allowed for.
+    The cut-off between "looks empty" and "looks occupied" sits halfway
     between the typical empty square and the typical tracked piece of that
     colour on that square colour (a white piece on a light square looks much
     less different than a black one), so it adapts to the lighting and the
-    pieces. Returns (looks_occupied_but_empty, looks_empty_but_occupied)."""
-    lab = cv2.cvtColor(board_img, cv2.COLOR_BGR2LAB).astype(np.float32)
-    mean, busy = np.empty((64, 3), np.float32), np.empty(64, np.float32)
-    for sq in range(64):
-        x0, y0, x1, y1 = square_rect(sq)
-        patch = lab[y0:y1, x0:x1].reshape(-1, 3)
-        mean[sq], busy[sq] = patch.mean(axis=0), patch.std(axis=0).sum()
+    pieces. margin: the least a square must stand out to count (higher
+    shows fewer marks). Returns (looks_occupied_but_empty, looks_empty_but_occupied)."""
+    lab = _per_square(cv2.cvtColor(board_img, cv2.COLOR_BGR2LAB).astype(np.float32))
+    mean = lab.mean(axis=(2, 3)).reshape(64, 3)
+    busy = lab.std(axis=(2, 3)).sum(axis=-1).reshape(64)
     extra, missing = [], []
     for parity in (0, 1):                      # 0: dark squares, 1: light squares
         squares = [sq for sq in range(64) if (sq % 8 + sq // 8) % 2 == parity]
         empty = [sq for sq in squares if sq not in pieces]
-        if len(empty) < 3:
+        if len(empty) < 5:
             continue                           # too few empty squares to compare with
-        m, b = np.median(mean[empty], axis=0), np.median(busy[empty])
-        score = {sq: float(np.abs(mean[sq] - m).sum() + max(0.0, busy[sq] - b)) for sq in squares}
+        m = _smooth_fit(mean, empty, squares)
+        b = float(np.median(busy[empty]))
+        score = {sq: float(np.abs(mean[sq] - m[i]).sum() + max(0.0, busy[sq] - b))
+                 for i, sq in enumerate(squares)}
         empty_typ = float(np.median([score[sq] for sq in empty]))
         cuts = {}
         for colour in (True, False):
@@ -130,11 +164,13 @@ def occupancy_mismatches(board_img, pieces):
         # a piece appearing where there should be none: the easier-to-see colour
         # would be obvious, so judge by the harder one (the lowest cut)
         new_cut = min(cuts.values()) if cuts else empty_typ + 15
+        # margin above the default 8 makes both kinds of mark harder to get
+        stricter = margin - 8
         for sq in squares:
             if sq in pieces:
-                if score[sq] < cuts[pieces[sq]]:
+                if score[sq] < cuts[pieces[sq]] - stricter:
                     missing.append(sq)
-            elif score[sq] > new_cut:
+            elif score[sq] > max(new_cut, empty_typ + margin) + max(0.0, stricter):
                 extra.append(sq)
     return sorted(extra), sorted(missing)
 
@@ -166,6 +202,8 @@ class BoardCamera:
         self.find_board = None
         self.on_realign = lambda corners: None
         self.baseline = None            # alignment just after (re)calibrating
+        self.motion_threshold = 8.0     # below this the board counts as still
+        self.motion = None              # the latest motion measured, for the web page
         self._latest = None
         self._seq = 0
         self._cond = threading.Condition()
@@ -201,7 +239,14 @@ class BoardCamera:
     def board(self):
         return warp(self.frame(), self.H)
 
-    def wait_until_still(self, check=lambda: None, still_frames=8, motion_threshold=8.0):
+    def board_small(self, size=STILL_SIZE):
+        """The straightened board at a small size: plenty for average square
+        colours, and far cheaper than the full size."""
+        k = size / WARP_SIZE
+        return cv2.warpPerspective(self.frame(), np.diag([k, k, 1.0]).astype(np.float32) @ self.H,
+                                   (size, size), flags=cv2.INTER_AREA)
+
+    def wait_until_still(self, check=lambda: None, still_frames=8, motion_threshold=None):
         """Block until the board image stops changing (hands are out of the way)
         and return that settled, warped image.
 
@@ -209,18 +254,17 @@ class BoardCamera:
         pixel, so webcam noise averages out. A change shared by the whole board
         (auto-exposure or white balance drifting) is taken off first, so only a
         hand or a piece moving on some squares counts."""
-        prev = self.board()
+        prev = square_means(self.board_small())
         calm = 0
-        self.motion = None
         while True:
             check()
             time.sleep(0.1)
-            cur = self.board()
-            self.motion = motion(prev, cur)
-            calm = calm + 1 if self.motion < motion_threshold else 0
+            cur = square_means(self.board_small())
+            self.motion = motion_of_means(prev, cur)
+            calm = calm + 1 if self.motion < (motion_threshold or self.motion_threshold) else 0
             prev = cur
             if calm >= still_frames:
-                return cur
+                return self.board()
 
     def set_calibration(self, corners):
         self.corners = corners

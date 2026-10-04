@@ -15,25 +15,55 @@ CORNERS = [(380, 90), (930, 110), (1010, 650), (300, 630)]   # a8 h8 h1 a1 in th
 rng = np.random.default_rng(1)
 
 
-def render(board, nudged=None, corners=CORNERS):
-    """nudged: {square: (dx, dy)} pixels a piece sits off-centre."""
+HEIGHT = {chess.PAWN: 0.55, chess.KNIGHT: 0.7, chess.BISHOP: 0.8, chess.ROOK: 0.6,
+          chess.QUEEN: 0.9, chess.KING: 1.0}
+
+
+def render(board, nudged=None, corners=CORNERS, lean=0.0, side_light=0.0):
+    """nudged: {square: (dx, dy)} pixels a piece sits off-centre.
+    lean: 0 for flat discs seen from above. Above 0, real 3D pieces seen
+    from the side: each piece rises towards the top of the picture by up to
+    `lean` squares (a king; shorter pieces less), covering part of the square
+    behind it, and the colours are a wooden set on a black and cream board
+    (like Kev's). side_light: the picture is that much brighter on the left
+    than the right (0.4 = +20% on the left edge, -20% on the right), with glare
+    on the left half that lifts the black squares to grey."""
     nudged = nudged or {}
     top = np.zeros((WARP_SIZE, WARP_SIZE, 3), np.uint8)
+    light, dark = ((181, 217, 240), (99, 136, 181)) if not lean else ((150, 210, 235), (45, 38, 36))
     for sq in chess.SQUARES:
         f, r = chess.square_file(sq), chess.square_rank(sq)
         x, y = f * SQ, (7 - r) * SQ
-        top[y:y + SQ, x:x + SQ] = (181, 217, 240) if (f + r) % 2 else (99, 136, 181)
+        top[y:y + SQ, x:x + SQ] = light if (f + r) % 2 else dark
+    # back rows first, so nearer pieces cover the tops of the ones behind
+    for sq in sorted(board.piece_map(), key=lambda s: -chess.square_rank(s)):
         p = board.piece_at(sq)
-        if p:
-            dx, dy = nudged.get(sq, (0, 0))
-            c = (x + SQ // 2 + dx, y + SQ // 2 + dy)
+        f, r = chess.square_file(sq), chess.square_rank(sq)
+        x, y = f * SQ, (7 - r) * SQ
+        dx, dy = nudged.get(sq, (0, 0))
+        c = (x + SQ // 2 + dx, y + SQ // 2 + dy)
+        if not lean:
             body = (235, 235, 235) if p.color else (40, 40, 40)
             cv2.circle(top, c, 34, body, -1)
             cv2.putText(top, p.symbol().upper(), (c[0] - 12, c[1] + 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 200), 3)
+            continue
+        body = (195, 225, 240) if p.color else (40, 60, 90)       # boxwood / dark stained
+        rise = int(lean * HEIGHT[p.piece_type] * SQ)
+        head = (c[0], c[1] - rise)
+        cv2.circle(top, c, 32, body, -1)                           # base
+        cv2.rectangle(top, (c[0] - 16, head[1]), (c[0] + 16, c[1]), body, -1)
+        cv2.circle(top, head, 22, body, -1)                        # head
+        edge = tuple(int(v * 0.7) for v in body)
+        cv2.circle(top, head, 22, edge, 2)
     # project onto a skewed "camera" frame and add sensor noise
     H = homography_from_corners(corners)
-    cam = cv2.warpPerspective(top, np.linalg.inv(H), (1280, 720))
+    cam = cv2.warpPerspective(top, np.linalg.inv(H), (1280, 720)).astype(np.float32)
+    if side_light:
+        # brighter towards the left, plus glare off the left of the board
+        # (which lifts the black squares to grey)
+        x = np.linspace(0, 1, cam.shape[1])[None, :, None]
+        cam = cam * (1 + side_light * (0.5 - x)) + 120 * side_light * np.clip(1 - 2 * x, 0, 1)
     noise = rng.normal(0, 4, cam.shape)
     return np.clip(cam + noise, 0, 255).astype(np.uint8)
 
