@@ -350,11 +350,13 @@ class Game:
     def _read_move(self, reference):
         """Wait for the board to change and settle, then work out the move.
         Returns (move, settled_image). A move typed on the web page also counts.
-        The same unreadable change isn't complained about twice."""
+        The same unreadable change isn't complained about twice, and a hand
+        or other big change only once a turn."""
         t = self.tuning
         self.reference = reference
         misses = 0
         last_miss = None
+        told_lots = False
         while True:
             try:
                 settled = self.cam.wait_for_board_change(reference, t["change_threshold"], self._check)
@@ -386,7 +388,14 @@ class Game:
             last_miss = changed
             misses += 1
             if len(changed) > 8:
-                self.say("Lots of the board changed. Is a hand or something else over it?")
+                if not (extra or missing):
+                    # every piece is where it was: the light changed, not the
+                    # board, so compare with how it looks now from here on
+                    reference = self.reference = settled
+                    last_miss = None
+                elif not told_lots:
+                    told_lots = True
+                    self.say("Lots of the board changed. Is a hand or something else over it?")
                 continue
             names = ", ".join(chess.square_name(sq) for sq in sorted(changed))
             self.say("I couldn't read that move. Please check the pieces are centred on their "
