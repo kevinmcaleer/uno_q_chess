@@ -8,6 +8,7 @@
   --dark-sq: #7d93ab;
   --mark: #f2c14e;
   --expected: #e4572e;
+  --hint: #2f80ed;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #14171c; --card: #1f242c; --text: #e7e9ee; --muted: #9aa3b2; }
@@ -28,6 +29,12 @@ main { display: grid; gap: 16px; padding: 0 16px 16px; grid-template-columns: re
 .sq.dark { background: var(--dark-sq); }
 .sq.last { box-shadow: inset 0 0 0 4px var(--mark); }
 .sq.expected { box-shadow: inset 0 0 0 4px var(--expected); }
+.sq.hint { box-shadow: inset 0 0 0 4px var(--hint); }
+.board { position: relative; }
+.board .arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.board .arrows .expected { stroke: var(--expected); fill: var(--expected); }
+.board .arrows .hint { stroke: var(--hint); fill: var(--hint); }
+.board .arrows polygon { stroke: none; }
 .sq .coord { position: absolute; left: 3px; bottom: 1px; font-size: 10px; color: rgb(0 0 0 / 0.5); }
 .sq .w { color: #fff; text-shadow: 0 0 2px #000, 0 0 1px #000; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }

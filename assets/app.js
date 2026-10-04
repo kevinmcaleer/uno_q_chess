@@ -99,7 +99,41 @@ function drawBoard(s) {
   const mark = (uci, cls) => { if (uci) for (const n of [uci.slice(0, 2), uci.slice(2, 4)]) marks[n] = [cls]; };
   mark(s.last_move, 'last');
   mark(s.expected, 'expected');
-  renderBoard($('#board'), s.fen, { flip: s.human === 'black', marks });
+  mark(s.hint, 'hint');
+  const flip = s.human === 'black';
+  renderBoard($('#board'), s.fen, { flip, marks });
+  drawArrows($('#board'), [[s.expected, 'expected'], [s.hint, 'hint']], flip);
+}
+
+// Arrows over a board for moves (uci), like the computer's move or a hint.
+function drawArrows(board, moves, flip) {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 8 8');
+  svg.setAttribute('class', 'arrows');
+  svg.setAttribute('aria-hidden', 'true');
+  const centre = (name) => {
+    const f = 'abcdefgh'.indexOf(name[0]), r = Number(name[1]) - 1;
+    return flip ? [7.5 - f, r + 0.5] : [f + 0.5, 7.5 - r];
+  };
+  for (const [uci, cls] of moves) {
+    if (!uci) continue;
+    const [x1, y1] = centre(uci.slice(0, 2)), [x2, y2] = centre(uci.slice(2, 4));
+    const len = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    const head = 0.35, bx = x2 - ux * head, by = y2 - uy * head;
+    const g = document.createElementNS(svgNS, 'g');
+    g.setAttribute('class', cls);
+    g.setAttribute('opacity', '0.8');
+    const line = document.createElementNS(svgNS, 'line');
+    for (const [k, v] of Object.entries({ x1, y1, x2: bx, y2: by, 'stroke-width': 0.14, 'stroke-linecap': 'round' }))
+      line.setAttribute(k, v);
+    const tip = document.createElementNS(svgNS, 'polygon');
+    tip.setAttribute('points', [[x2, y2], [bx - uy * 0.22, by + ux * 0.22], [bx + uy * 0.22, by - ux * 0.22]]
+      .map((p) => p.join(',')).join(' '));
+    g.append(line, tip);
+    svg.appendChild(g);
+  }
+  board.appendChild(svg);
 }
 
 // ---- controls --------------------------------------------------------------
