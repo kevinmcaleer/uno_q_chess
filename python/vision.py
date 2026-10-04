@@ -65,11 +65,55 @@ def _per_square(img):
 
 def change_scores(before, after):
     """Mean colour difference per square between two warped board images.
-    Returns a list of 64 floats indexed by python-chess square number."""
+    Returns a list of 64 floats indexed by python-chess square number.
+    `before` is first brought to the lighting of `after` (see match_lighting),
+    so a change in the room's light or the webcam's exposure doesn't count."""
+    before = match_lighting(before, after)
     a = cv2.GaussianBlur(cv2.cvtColor(before, cv2.COLOR_BGR2LAB), (5, 5), 0).astype(np.int16)
     b = cv2.GaussianBlur(cv2.cvtColor(after, cv2.COLOR_BGR2LAB), (5, 5), 0).astype(np.int16)
     diff = np.abs(a - b).sum(axis=2).astype(np.float32)
     return _per_square(diff).mean(axis=(2, 3)).reshape(64).tolist()
+
+
+LIGHT_CELLS = 16                # match_lighting compares the boards in 16 x 16 patches
+
+
+def match_lighting(before, after):
+    """`before` as it would look under the light in `after`.
+
+    Light changes slowly across the board (a lamp, a cloud, glare, the
+    webcam's auto-exposure), so in each colour channel the new picture is
+    roughly old * gain + offset, with gain and offset varying smoothly over
+    the board (offset is glare). They are fitted from the average colour of 16 x 16 patches,
+    twice, the second time without the patches that fit worst, so the few
+    squares a move changes don't drag the fit."""
+    n = LIGHT_CELLS
+    x = cv2.resize(before, (n, n), interpolation=cv2.INTER_AREA).astype(np.float32).reshape(-1, 3)
+    y = cv2.resize(after, (n, n), interpolation=cv2.INTER_AREA).astype(np.float32).reshape(-1, 3)
+    clipped = cv2.resize((np.maximum(before, after) >= 250).astype(np.float32), (n, n),
+                         interpolation=cv2.INTER_AREA).reshape(-1, 3)
+    v, u = np.mgrid[0:n, 0:n].reshape(2, -1) / (n - 1) - 0.5
+    smooth = np.stack([np.ones_like(u), u, v, u * u, v * v, u * v], axis=1)
+    # the fitted gain and offset are worked out on a coarse grid, then enlarged
+    gv, gu = np.mgrid[0:50, 0:50] / 49 - 0.5
+    grid = np.stack([np.ones_like(gu), gu, gv, gu * gu, gv * gv, gu * gv], axis=-1)
+    size = (before.shape[1], before.shape[0])
+    out = np.empty(before.shape, np.float32)
+    for c in range(3):
+        # gain: a gentle curve over the board; offset (glare): a slope
+        A = np.concatenate([smooth * x[:, c:c + 1], smooth[:, :3]], axis=1)
+        # patches with white-clipped pixels in either picture: no gain explains them
+        keep = unclipped = (clipped[:, c] < 0.01)
+        if unclipped.sum() < 3 * A.shape[1]:
+            keep = unclipped = np.ones(len(A), bool)
+        for _ in range(2):
+            coef, *_ = np.linalg.lstsq(A[keep], y[keep, c], rcond=None)
+            err = np.abs(y[:, c] - A @ coef)
+            keep = unclipped & (err <= np.quantile(err[unclipped], 0.8))
+        gain = cv2.resize((grid @ coef[:6]).astype(np.float32), size)
+        offset = cv2.resize((grid[..., :3] @ coef[6:]).astype(np.float32), size)
+        out[..., c] = before[..., c] * gain + offset
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def square_means(board_img):

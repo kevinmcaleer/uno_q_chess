@@ -73,6 +73,9 @@ function renderBoard(board, fen, { flip = false, marks = {}, onClick = null } = 
       sq.className = 'sq ' + ((file + rank) % 2 ? 'light' : 'dark');
       for (const c of marks[name] || []) sq.classList.add(c);
       const p = pieces[name];
+      // hover a square to see what's on it
+      sq.title = p ? `${p === p.toUpperCase() ? 'White' : 'Black'} ${NAMES[p.toLowerCase()]} on ${name}`
+                   : `${name}: empty`;
       if (p) {
         const span = document.createElement('span');
         span.textContent = GLYPH[p.toLowerCase()];
